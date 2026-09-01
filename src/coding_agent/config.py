@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 @dataclass(slots=True)
 class AgentSettings:
@@ -22,6 +24,8 @@ class AgentSettings:
     @classmethod
     def from_env(cls, workspace: str | None = None) -> "AgentSettings":
         root = Path(workspace or os.getenv("CHASM_WORKSPACE", ".")).expanduser().resolve()
+        load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
+        load_dotenv(dotenv_path=root / ".env", override=False)
         provider = os.getenv("CHASM_PROVIDER", "openai").lower()
         dashscope_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
