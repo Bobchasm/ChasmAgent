@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from fastapi import Query
@@ -14,6 +14,8 @@ from .config import AgentSettings
 from .llm import LLMClient
 from .logging import setup_logging
 from .session import SessionStore
+from .memory import MemoryStore
+import json
 from .tools.registry import ToolRegistry
 
 
@@ -43,6 +45,7 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
                 extra_body={"enable_thinking": True} if settings.enable_thinking else None,
             ),
             tools=ToolRegistry(settings.workspace_root),
+            memory=MemoryStore(settings.workspace_root),
             max_turns=settings.max_turns,
             max_history_messages=settings.max_history_messages,
             max_tool_output_chars=settings.max_tool_output_chars,
@@ -73,6 +76,38 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         if record is None:
             raise HTTPException(status_code=404, detail="session not found")
         return record
+
+    @app.get('/api/sessions/{session_id}/events')
+    def stream_session_events(session_id: str):
+        record = store.get(session_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail='session not found')
+
+        def event_gen():
+            last_idx = 0
+            while True:
+                # yield any new events
+                events = store.get_events_since(session_id, last_idx)
+                if events:
+                    for ev in events:
+                        payload = json.dumps(ev, ensure_ascii=False)
+                        yield f"data: {payload}\n\n"
+                        last_idx += 1
+
+                rec = store.get(session_id)
+                if rec is None:
+                    break
+                # if done and no more events, finish
+                if rec.status in {"done", "error"} and last_idx >= len(rec.events):
+                    break
+
+                # wait for new events or timeout
+                store.wait_for_events(session_id, last_idx, timeout=15)
+
+            # final sentinel
+            yield "data: {\"kind\": \"end\", \"payload\": {}}\n\n"
+
+        return StreamingResponse(event_gen(), media_type='text/event-stream')
 
     @app.get("/api/tree")
     def tree():

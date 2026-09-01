@@ -9,6 +9,7 @@ const filePathInput = document.getElementById("file-path");
 const fileContentEl = document.getElementById("file-content");
 
 let currentSession = null;
+let currentEventSource = null;
 
 async function loadTree() {
   const resp = await fetch("/api/tree");
@@ -71,7 +72,31 @@ runBtn.addEventListener("click", async () => {
   });
   const data = await resp.json();
   currentSession = data.session_id;
-  await pollSession();
+  // open SSE connection for live events
+  if (currentEventSource) {
+    currentEventSource.close();
+    currentEventSource = null;
+  }
+  currentEventSource = new EventSource(`/api/sessions/${currentSession}/events`);
+  const events = [];
+  currentEventSource.onmessage = (ev) => {
+    try {
+      const obj = JSON.parse(ev.data);
+      events.push(obj);
+      sessionView.textContent = JSON.stringify(events, null, 2);
+      if (obj.kind === 'final' || obj.kind === 'end') {
+        statusEl.textContent = 'done';
+        currentEventSource.close();
+        currentEventSource = null;
+      }
+    } catch (err) {
+      console.error('sse parse', err);
+    }
+  };
+  currentEventSource.onerror = () => {
+    // keep polling as fallback
+    setTimeout(pollSession, 500);
+  };
 });
 
 refreshTreeBtn.addEventListener("click", async () => {
