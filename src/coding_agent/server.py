@@ -34,9 +34,13 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         if session is None:
             return
         session.status = "running"
-        llm = LLMClient(api_key=settings.api_key, base_url=settings.base_url, model=settings.model)
         agent = CodingAgent(
-            llm=llm,
+            llm=LLMClient(
+                api_key=settings.api_key,
+                base_url=settings.base_url,
+                model=settings.model,
+                extra_body={"enable_thinking": True} if settings.enable_thinking else None,
+            ),
             tools=ToolRegistry(settings.workspace_root),
             max_turns=settings.max_turns,
             max_history_messages=settings.max_history_messages,

@@ -11,6 +11,7 @@ class LLMClient:
     api_key: str
     base_url: str
     model: str
+    extra_body: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
@@ -21,5 +22,5 @@ class LLMClient:
             messages=messages,
             tools=tools,
             temperature=temperature,
+            extra_body=self.extra_body or None,
         )
-

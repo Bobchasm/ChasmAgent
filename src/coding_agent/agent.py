@@ -46,6 +46,9 @@ class CodingAgent:
             self._emit("turn_start", turn=turn, messages=len(state.messages))
             response = self.llm.complete(state.messages, self.tools.specs())
             message = response.choices[0].message
+            reasoning = getattr(message, "reasoning_content", None)
+            if reasoning:
+                self._emit("reasoning", text=reasoning)
             assistant_payload: dict[str, Any] = {"role": "assistant", "content": message.content or ""}
             if getattr(message, "tool_calls", None):
                 assistant_payload["tool_calls"] = []

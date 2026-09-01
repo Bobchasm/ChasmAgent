@@ -28,7 +28,12 @@ def run(
     if not settings.api_key:
         raise typer.BadParameter("OPENAI_API_KEY is required")
     agent = CodingAgent(
-        llm=LLMClient(api_key=settings.api_key, base_url=settings.base_url, model=settings.model),
+        llm=LLMClient(
+            api_key=settings.api_key,
+            base_url=settings.base_url,
+            model=settings.model,
+            extra_body={"enable_thinking": True} if settings.enable_thinking else None,
+        ),
         tools=ToolRegistry(settings.workspace_root),
         max_turns=settings.max_turns,
         max_history_messages=settings.max_history_messages,
@@ -53,4 +58,6 @@ def serve(
     os.environ["OPENAI_MODEL"] = settings.model
     os.environ["OPENAI_BASE_URL"] = settings.base_url
     os.environ["CHASM_LOG_LEVEL"] = settings.log_level
+    os.environ["CHASM_PROVIDER"] = settings.provider
+    os.environ["CHASM_ENABLE_THINKING"] = "1" if settings.enable_thinking else "0"
     uvicorn.run("coding_agent.server:build_app", factory=True, host=host, port=port, reload=reload)
