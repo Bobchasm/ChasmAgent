@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chasm Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260901-3" />
+    <link rel="stylesheet" href="/static/app.css?v=20260901-4" />
   </head>
   <body>
     <header class="topbar">
@@ -14,7 +14,6 @@
           <div class="subtle">Local coding agent for file edits, commands, and memory.</div>
         </div>
         <div class="project-bar">
-          <input id="project-path" placeholder="Open local project path" />
           <button id="open-project">Open Project</button>
           <div class="project-info" id="project-info"></div>
         </div>
@@ -58,7 +57,28 @@
       </aside>
     </main>
 
+    <div id="project-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="panel-title">Project Picker</div>
+            <div class="subtle" id="browse-path-label"></div>
+          </div>
+          <button id="close-project-modal" class="ghost">Close</button>
+        </div>
+        <div class="browse-toolbar">
+          <button id="browse-up" class="ghost">Up</button>
+          <input id="browse-path" />
+          <button id="browse-go">Go</button>
+        </div>
+        <div id="browse-list" class="browse-list"></div>
+        <div class="controls" style="justify-content: flex-end; margin-top: 12px;">
+          <button id="use-project">Use Folder</button>
+        </div>
+      </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"></script>
-    <script src="/static/app.js?v=20260901-3"></script>
+    <script src="/static/app.js?v=20260901-4"></script>
   </body>
 </html>

@@ -20,6 +20,8 @@ def test_server_routes(tmp_path: Path):
     assert client.get("/").status_code == 200
     project = client.get("/api/project").json()
     assert project["project_root"] == str(tmp_path)
+    browse = client.get("/api/browse", params={"path": str(tmp_path)}).json()
+    assert browse["path"] == str(tmp_path)
     tree = client.get("/api/tree").json()
     assert "sample.txt" in tree["files"]
     assert all(".git" not in item for item in tree["files"])

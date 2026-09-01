@@ -7,15 +7,23 @@ const treeList = document.getElementById("tree-list");
 const sessionList = document.getElementById("session-list");
 const statusEl = document.getElementById("status");
 const filePathInput = document.getElementById("file-path");
-const projectPathInput = document.getElementById("project-path");
-const openProjectBtn = document.getElementById("open-project");
 const projectInfo = document.getElementById("project-info");
+const openProjectBtn = document.getElementById("open-project");
+const projectModal = document.getElementById("project-modal");
+const closeProjectModalBtn = document.getElementById("close-project-modal");
+const browseUpBtn = document.getElementById("browse-up");
+const browseGoBtn = document.getElementById("browse-go");
+const useProjectBtn = document.getElementById("use-project");
+const browsePathInput = document.getElementById("browse-path");
+const browseList = document.getElementById("browse-list");
+const browsePathLabel = document.getElementById("browse-path-label");
 
 let currentSession = null;
 let currentEventSource = null;
 let currentProjectRoot = "";
 let selectedFile = "";
 let editor = null;
+let browseCurrentPath = "";
 
 function initEditor() {
   editor = ace.edit("editor");
@@ -32,21 +40,20 @@ function initEditor() {
   });
 }
 
-function apiJson(url, options) {
-  return fetch(url, options).then(async (resp) => {
-    const text = await resp.text();
-    let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch (err) {
-      data = { raw: text };
-    }
-    if (!resp.ok) {
-      const detail = data && (data.detail || data.message || data.raw);
-      throw new Error(detail || resp.statusText);
-    }
-    return data;
-  });
+async function apiJson(url, options) {
+  const resp = await fetch(url, options);
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (err) {
+    data = { raw: text };
+  }
+  if (!resp.ok) {
+    const detail = data && (data.detail || data.message || data.raw);
+    throw new Error(detail || resp.statusText);
+  }
+  return data;
 }
 
 function languageModeFor(path) {
@@ -64,24 +71,30 @@ function languageModeFor(path) {
   return "ace/mode/text";
 }
 
+function setProjectModal(open) {
+  projectModal.classList.toggle("hidden", !open);
+}
+
 async function loadProject() {
   const data = await apiJson("/api/project");
   currentProjectRoot = data.project_root;
-  projectPathInput.value = currentProjectRoot;
   projectInfo.textContent = `root: ${data.project_root}`;
 }
 
-async function openProject() {
-  const path = projectPathInput.value.trim();
-  if (!path) {
-    alert("请输入项目路径");
-    return;
-  }
-  await apiJson("/api/project", {
+async function openProjectModal() {
+  browseCurrentPath = currentProjectRoot || "";
+  browsePathInput.value = browseCurrentPath;
+  await loadBrowse(browseCurrentPath);
+  setProjectModal(true);
+}
+
+async function chooseProject(path) {
+  const data = await apiJson("/api/project", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
   });
+  currentProjectRoot = data.project_root;
   await loadProject();
   await loadTree();
   await loadSessions();
@@ -107,15 +120,12 @@ function buildTree(files) {
   return root;
 }
 
-function createTreeNode(name, path, isFile) {
+function createFileButton(name, path) {
   const item = document.createElement("button");
   item.type = "button";
-  item.className = isFile ? "file-item" : "folder-item";
+  item.className = "file-item" + (selectedFile === path ? " active" : "");
   item.textContent = name;
-  if (isFile) {
-    item.className += selectedFile === path ? " active" : "";
-    item.addEventListener("click", () => openFile(path));
-  }
+  item.addEventListener("click", () => openFile(path));
   return item;
 }
 
@@ -140,7 +150,7 @@ function renderTreeNode(node, container, prefix = "") {
 
   fileNames.forEach((fileName) => {
     const path = prefix ? `${prefix}/${fileName}` : fileName;
-    container.appendChild(createTreeNode(fileName, path, true));
+    container.appendChild(createFileButton(fileName, path));
   });
 }
 
@@ -230,6 +240,39 @@ async function openSession(sessionId) {
   };
 }
 
+async function loadBrowse(path) {
+  const data = await apiJson(`/api/browse?path=${encodeURIComponent(path || "")}`);
+  browseCurrentPath = data.path;
+  browsePathInput.value = data.path;
+  browsePathLabel.textContent = data.path;
+  browseList.innerHTML = "";
+
+  if (data.parent) {
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "browse-item dir";
+    up.textContent = "..";
+    up.addEventListener("click", () => loadBrowse(data.parent));
+    browseList.appendChild(up);
+  }
+
+  data.entries.forEach((entry) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `browse-item ${entry.kind}`;
+    item.textContent = entry.kind === "dir" ? `▸ ${entry.name}` : entry.name;
+    item.addEventListener("click", () => {
+      if (entry.kind === "dir") {
+        loadBrowse(entry.path);
+      } else {
+        browsePathInput.value = entry.path;
+        browsePathLabel.textContent = entry.path;
+      }
+    });
+    browseList.appendChild(item);
+  });
+}
+
 runBtn.addEventListener("click", async () => {
   const task = taskEl.value.trim();
   if (!task) {
@@ -254,8 +297,31 @@ refreshTreeBtn.addEventListener("click", async () => {
   await loadSessions();
 });
 
-openProjectBtn.addEventListener("click", openProject);
+openProjectBtn.addEventListener("click", openProjectModal);
+closeProjectModalBtn.addEventListener("click", () => setProjectModal(false));
+browseUpBtn.addEventListener("click", async () => {
+  if (browseCurrentPath) {
+    const parent = browseCurrentPath === "/" ? "/" : browseCurrentPath.split("/").slice(0, -1).join("/") || "/";
+    await loadBrowse(parent);
+  }
+});
+browseGoBtn.addEventListener("click", async () => {
+  const path = browsePathInput.value.trim();
+  if (!path) return;
+  await loadBrowse(path);
+});
+useProjectBtn.addEventListener("click", async () => {
+  const path = browsePathInput.value.trim();
+  if (!path) return;
+  await chooseProject(path);
+  setProjectModal(false);
+});
 saveFileBtn.addEventListener("click", saveFile);
+projectModal.addEventListener("click", (ev) => {
+  if (ev.target === projectModal) {
+    setProjectModal(false);
+  }
+});
 
 function escapeHtml(str) {
   return String(str)

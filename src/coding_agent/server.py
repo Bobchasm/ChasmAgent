@@ -83,6 +83,28 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         root = get_project_root()
         return {"project_root": str(root), "workspace_root": str(settings.workspace_root)}
 
+    @app.get("/api/browse")
+    def browse(path: str | None = None):
+        target = Path(path).expanduser().resolve() if path else get_project_root()
+        if not target.exists() or not target.is_dir():
+            raise HTTPException(status_code=400, detail="path is not a directory")
+        entries = []
+        try:
+            for child in sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+                if is_ignored_path(child):
+                    continue
+                entries.append(
+                    {
+                        "name": child.name,
+                        "path": str(child),
+                        "kind": "dir" if child.is_dir() else "file",
+                    }
+                )
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        parent = str(target.parent) if target.parent != target else None
+        return {"path": str(target), "parent": parent, "entries": entries[:500]}
+
     @app.post("/api/project")
     def choose_project(payload: dict[str, str]):
         path = (payload.get("path") or "").strip()
