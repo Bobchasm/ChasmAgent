@@ -7,6 +7,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from fastapi import Query
 
 from .agent import CodingAgent
 from .config import AgentSettings
@@ -82,5 +83,35 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             rel = path.relative_to(settings.workspace_root)
             items.append(str(rel))
         return {"root": str(settings.workspace_root), "files": items[:800]}
+
+    @app.get("/api/file")
+    def get_file(path: str = Query(..., description="Relative file path")):
+        try:
+            file_path = settings.workspace_root.joinpath(path).resolve()
+            # ensure within workspace
+            if settings.workspace_root not in file_path.parents and file_path != settings.workspace_root:
+                raise HTTPException(status_code=400, detail="path outside workspace")
+            if not file_path.exists() or not file_path.is_file():
+                raise HTTPException(status_code=404, detail="file not found")
+            content = file_path.read_text(encoding="utf-8")
+            return {"path": str(path), "content": content}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    class FileWrite(BaseModel):
+        path: str
+        content: str
+
+    @app.post("/api/file")
+    def write_file(payload: FileWrite):
+        try:
+            file_path = settings.workspace_root.joinpath(payload.path).resolve()
+            if settings.workspace_root not in file_path.parents and file_path != settings.workspace_root:
+                raise HTTPException(status_code=400, detail="path outside workspace")
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(payload.content, encoding="utf-8")
+            return {"ok": True, "message": f"wrote {payload.path}"}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
 
     return app

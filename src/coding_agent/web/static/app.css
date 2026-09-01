@@ -49,7 +49,7 @@ label {
 
 .layout {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 260px 1fr 380px;
   gap: 16px;
   padding: 16px;
 }
@@ -64,6 +64,19 @@ label {
 
 .composer {
   grid-column: 1 / -1;
+}
+
+.sidebar {
+  overflow: auto;
+}
+
+.editor textarea {
+  min-height: 480px;
+}
+
+.session-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 textarea {
@@ -123,7 +136,7 @@ button.ghost {
   word-break: break-word;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1200px) {
   .layout {
     grid-template-columns: 1fr;
   }

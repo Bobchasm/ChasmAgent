@@ -16,7 +16,23 @@
     </header>
 
     <main class="layout">
-      <section class="panel composer">
+      <aside class="panel sidebar">
+        <div class="panel-title">Workspace</div>
+        <pre id="tree-view" class="stream">Loading...</pre>
+      </aside>
+
+      <section class="panel editor">
+        <div class="panel-title">Editor</div>
+        <input id="file-path" placeholder="Select a file from workspace" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:6px;" />
+        <textarea id="file-content" placeholder="File content will appear here..."></textarea>
+        <div class="controls">
+          <button id="save-file">Save</button>
+          <button id="refresh-tree" class="ghost">Refresh</button>
+        </div>
+      </section>
+
+      <aside class="panel session-panel">
+        <div class="panel-title">Agent</div>
         <label for="task">Task</label>
         <textarea id="task" placeholder="Describe the coding job you want the agent to do."></textarea>
         <div class="controls">
@@ -25,24 +41,12 @@
             <option value="dry-run">Dry run</option>
           </select>
           <button id="run-btn">Run</button>
-          <button id="refresh-btn" class="ghost">Refresh</button>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">Session</div>
-        <pre id="session-view" class="stream">No session yet.</pre>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">Workspace</div>
-        <pre id="tree-view" class="stream">Loading...</pre>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">Result</div>
-        <pre id="result-view" class="stream"></pre>
-      </section>
+        <div style="margin-top:12px;">
+          <div class="panel-title" style="margin-top:6px;">Session</div>
+          <pre id="session-view" class="stream">No session yet.</pre>
+        </div>
+      </aside>
     </main>
 
     <script src="/static/app.js"></script>
