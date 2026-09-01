@@ -7,7 +7,6 @@ const treeList = document.getElementById("tree-list");
 const sessionList = document.getElementById("session-list");
 const statusEl = document.getElementById("status");
 const filePathInput = document.getElementById("file-path");
-const fileContentEl = document.getElementById("file-content");
 const projectPathInput = document.getElementById("project-path");
 const openProjectBtn = document.getElementById("open-project");
 const projectInfo = document.getElementById("project-info");
@@ -16,21 +15,53 @@ let currentSession = null;
 let currentEventSource = null;
 let currentProjectRoot = "";
 let selectedFile = "";
+let editor = null;
 
-async function apiJson(url, options) {
-  const resp = await fetch(url, options);
-  const text = await resp.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch (err) {
-    data = { raw: text };
-  }
-  if (!resp.ok) {
-    const detail = data && (data.detail || data.message || data.raw);
-    throw new Error(detail || resp.statusText);
-  }
-  return data;
+function initEditor() {
+  editor = ace.edit("editor");
+  editor.setTheme("ace/theme/monokai");
+  editor.session.setMode("ace/mode/text");
+  editor.session.setUseWrapMode(true);
+  editor.setFontSize(14);
+  editor.setShowPrintMargin(false);
+  editor.setOptions({
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    highlightActiveLine: true,
+    showGutter: true,
+    displayIndentGuides: true,
+  });
+}
+
+function apiJson(url, options) {
+  return fetch(url, options).then(async (resp) => {
+    const text = await resp.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (err) {
+      data = { raw: text };
+    }
+    if (!resp.ok) {
+      const detail = data && (data.detail || data.message || data.raw);
+      throw new Error(detail || resp.statusText);
+    }
+    return data;
+  });
+}
+
+function languageModeFor(path) {
+  const lower = String(path).toLowerCase();
+  if (lower.endsWith(".py")) return "ace/mode/python";
+  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) return "ace/mode/javascript";
+  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "ace/mode/typescript";
+  if (lower.endsWith(".json")) return "ace/mode/json";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "ace/mode/yaml";
+  if (lower.endsWith(".md")) return "ace/mode/markdown";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "ace/mode/html";
+  if (lower.endsWith(".css")) return "ace/mode/css";
+  if (lower.endsWith(".sh")) return "ace/mode/sh";
+  if (lower.endsWith(".toml")) return "ace/mode/toml";
+  return "ace/mode/text";
 }
 
 async function loadProject() {
@@ -56,6 +87,63 @@ async function openProject() {
   await loadSessions();
 }
 
+function buildTree(files) {
+  const root = { dirs: new Map(), files: [] };
+  for (const file of files) {
+    const parts = file.split("/").filter(Boolean);
+    let node = root;
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (i === parts.length - 1) {
+        node.files.push(part);
+      } else {
+        if (!node.dirs.has(part)) {
+          node.dirs.set(part, { dirs: new Map(), files: [] });
+        }
+        node = node.dirs.get(part);
+      }
+    }
+  }
+  return root;
+}
+
+function createTreeNode(name, path, isFile) {
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = isFile ? "file-item" : "folder-item";
+  item.textContent = name;
+  if (isFile) {
+    item.className += selectedFile === path ? " active" : "";
+    item.addEventListener("click", () => openFile(path));
+  }
+  return item;
+}
+
+function renderTreeNode(node, container, prefix = "") {
+  const dirNames = Array.from(node.dirs.keys()).sort((a, b) => a.localeCompare(b));
+  const fileNames = node.files.slice().sort((a, b) => a.localeCompare(b));
+
+  dirNames.forEach((dirName) => {
+    const path = prefix ? `${prefix}/${dirName}` : dirName;
+    const details = document.createElement("details");
+    details.open = true;
+    const summary = document.createElement("summary");
+    summary.className = "folder-summary";
+    summary.textContent = dirName;
+    details.appendChild(summary);
+    const child = document.createElement("div");
+    child.className = "tree-children";
+    renderTreeNode(node.dirs.get(dirName), child, path);
+    details.appendChild(child);
+    container.appendChild(details);
+  });
+
+  fileNames.forEach((fileName) => {
+    const path = prefix ? `${prefix}/${fileName}` : fileName;
+    container.appendChild(createTreeNode(fileName, path, true));
+  });
+}
+
 async function loadTree() {
   const data = await apiJson("/api/tree");
   treeList.innerHTML = "";
@@ -63,14 +151,8 @@ async function loadTree() {
     treeList.textContent = "(empty)";
     return;
   }
-  data.files.forEach((file) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "file-item" + (file === selectedFile ? " active" : "");
-    item.textContent = file;
-    item.addEventListener("click", () => openFile(file));
-    treeList.appendChild(item);
-  });
+  const root = buildTree(data.files);
+  renderTreeNode(root, treeList);
 }
 
 async function loadSessions() {
@@ -90,7 +172,8 @@ async function openFile(path) {
   const data = await apiJson(`/api/file?path=${encodeURIComponent(path)}`);
   selectedFile = path;
   filePathInput.value = data.path;
-  fileContentEl.value = data.content;
+  editor.session.setMode(languageModeFor(path));
+  editor.setValue(data.content, -1);
   await loadTree();
 }
 
@@ -103,7 +186,7 @@ async function saveFile() {
   const data = await apiJson("/api/file", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, content: fileContentEl.value }),
+    body: JSON.stringify({ path, content: editor.getValue() }),
   });
   alert(data.message || "saved");
   await loadTree();
@@ -183,6 +266,7 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+initEditor();
 loadProject().then(loadTree).then(loadSessions).catch((err) => {
   console.error(err);
   projectInfo.textContent = "failed to load project";

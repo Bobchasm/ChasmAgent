@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chasm Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260901-2" />
+    <link rel="stylesheet" href="/static/app.css?v=20260901-3" />
   </head>
   <body>
     <header class="topbar">
@@ -33,7 +33,7 @@
       <section class="panel editor">
         <div class="panel-title">Editor</div>
         <input id="file-path" placeholder="Select a file from workspace" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:6px;" />
-        <textarea id="file-content" placeholder="File content will appear here..."></textarea>
+        <div id="editor" class="code-editor"></div>
         <div class="controls">
           <button id="save-file">Save</button>
           <button id="refresh-tree" class="ghost">Refresh</button>
@@ -58,6 +58,7 @@
       </aside>
     </main>
 
-    <script src="/static/app.js?v=20260901-2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"></script>
+    <script src="/static/app.js?v=20260901-3"></script>
   </body>
 </html>
