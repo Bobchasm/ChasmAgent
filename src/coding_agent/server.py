@@ -7,7 +7,6 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 
 from .agent import CodingAgent
 from .config import AgentSettings
@@ -39,11 +38,6 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
     project_lock = threading.Lock()
     active_project_root = settings.workspace_root.resolve()
     index_html = (base_dir / "templates" / "index.html").read_text(encoding="utf-8")
-
-    class SessionRequest(BaseModel):
-        task: str = Field(min_length=1)
-        mode: str = Field(default="auto")
-        project_root: str | None = None
 
     def get_project_root() -> Path:
         with project_lock:
@@ -136,9 +130,14 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         return {"message": message}
 
     @app.post("/api/sessions")
-    def create_session(payload: SessionRequest, background_tasks: BackgroundTasks):
-        project_root = Path(payload.project_root) if payload.project_root else get_project_root()
-        record = store.create(payload.task, str(project_root), payload.mode)
+    def create_session(payload: dict[str, str], background_tasks: BackgroundTasks):
+        task = (payload.get("task") or "").strip()
+        if not task:
+            raise HTTPException(status_code=400, detail="task is required")
+        mode = payload.get("mode") or "auto"
+        project_root_value = (payload.get("project_root") or "").strip()
+        project_root = Path(project_root_value) if project_root_value else get_project_root()
+        record = store.create(task, str(project_root), mode)
         background_tasks.add_task(run_session, record.id)
         return {"session_id": record.id}
 
