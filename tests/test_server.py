@@ -18,12 +18,16 @@ def test_server_routes(tmp_path: Path):
     )
     client = TestClient(build_app(settings))
     assert client.get("/").status_code == 200
+    project = client.get("/api/project").json()
+    assert project["project_root"] == str(tmp_path)
     tree = client.get("/api/tree").json()
     assert "sample.txt" in tree["files"]
     assert all(".git" not in item for item in tree["files"])
     file_resp = client.get("/api/file", params={"path": "sample.txt"})
     assert file_resp.status_code == 200
     assert file_resp.json()["content"] == "hello"
+    project_resp = client.post("/api/project", json={"path": str(tmp_path)})
+    assert project_resp.status_code == 200
     save_resp = client.post("/api/file", json={"path": "nested/new.txt", "content": "world"})
     assert save_resp.status_code == 200
     assert (tmp_path / "nested/new.txt").read_text(encoding="utf-8") == "world"

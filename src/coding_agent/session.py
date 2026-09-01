@@ -19,6 +19,7 @@ def _utc_now() -> str:
 class SessionRecord:
     id: str
     task: str
+    project_root: str
     mode: str = "auto"
     status: str = "queued"
     created_at: str = field(default_factory=_utc_now)
@@ -30,6 +31,7 @@ class SessionRecord:
         return {
             "id": self.id,
             "task": self.task,
+            "project_root": self.project_root,
             "mode": self.mode,
             "status": self.status,
             "created_at": self.created_at,
@@ -43,6 +45,7 @@ class SessionRecord:
         return cls(
             id=payload["id"],
             task=payload.get("task", ""),
+            project_root=payload.get("project_root", ""),
             mode=payload.get("mode", "auto"),
             status=payload.get("status", "queued"),
             created_at=payload.get("created_at", _utc_now()),
@@ -79,8 +82,8 @@ class SessionStore:
         record.updated_at = _utc_now()
         self._path(record.id).write_text(json.dumps(record.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def create(self, task: str, mode: str = "auto") -> SessionRecord:
-        record = SessionRecord(id=uuid.uuid4().hex[:12], task=task, mode=mode)
+    def create(self, task: str, project_root: str, mode: str = "auto") -> SessionRecord:
+        record = SessionRecord(id=uuid.uuid4().hex[:12], task=task, project_root=project_root, mode=mode)
         with self._cond:
             self._sessions[record.id] = record
             self._save(record)

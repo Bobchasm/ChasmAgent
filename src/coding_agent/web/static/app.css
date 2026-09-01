@@ -1,12 +1,14 @@
 :root {
-  color-scheme: light;
-  --bg: #f6f7fb;
-  --panel: #ffffff;
-  --ink: #172033;
-  --muted: #5e6a82;
-  --line: #d9deea;
-  --accent: #2457f5;
-  --accent-weak: #e8efff;
+  color-scheme: dark;
+  --bg: #0f111a;
+  --panel: #151926;
+  --panel-2: #101522;
+  --ink: #e6eaf2;
+  --muted: #8b94a7;
+  --line: #293042;
+  --accent: #5b8cff;
+  --accent-weak: #18233a;
+  --input: #0c111b;
 }
 
 * {
@@ -23,11 +25,17 @@ body {
 .topbar {
   display: flex;
   justify-content: space-between;
-  align-items: end;
+  align-items: center;
   padding: 20px 24px 12px;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(10px);
+  background: rgba(10, 14, 24, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.topbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .brand {
@@ -44,7 +52,7 @@ label {
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .layout {
@@ -55,19 +63,60 @@ label {
 }
 
 .panel {
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 16px;
   min-height: 160px;
 }
 
-.composer {
-  grid-column: 1 / -1;
-}
-
 .sidebar {
   overflow: auto;
+}
+
+.project-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.project-bar input {
+  width: min(56vw, 520px);
+  background: var(--input);
+}
+
+.project-info {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.file-item {
+  width: 100%;
+  text-align: left;
+  background: var(--input);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.file-item:hover,
+.file-item.active {
+  border-color: var(--accent);
+  background: #14213a;
 }
 
 .session-list {
@@ -79,7 +128,7 @@ label {
 .session-item {
   width: 100%;
   text-align: left;
-  background: #fff;
+  background: var(--input);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
@@ -116,7 +165,7 @@ textarea {
   padding: 12px;
   font: inherit;
   color: var(--ink);
-  background: #fff;
+  background: var(--input);
 }
 
 .controls {
@@ -130,7 +179,7 @@ select {
   height: 36px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--input);
   color: var(--ink);
   padding: 0 12px;
   font: inherit;
@@ -139,12 +188,12 @@ select {
 button {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: #ffffff;
   cursor: pointer;
 }
 
 button.ghost {
-  background: white;
+  background: var(--input);
   color: var(--ink);
 }
 
@@ -161,6 +210,8 @@ button.ghost {
   min-height: 220px;
   white-space: pre-wrap;
   word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
 }
 
 @media (max-width: 1200px) {

@@ -7,6 +7,7 @@
 4. 启动 Web 端：`chasm-agent serve --reload`
 5. 命令行单次任务：`chasm-agent run "你的编程任务"`
 6. 交互式终端：`chasm-agent chat`
+7. Web 端顶部可以直接输入本机项目路径并切换工作区
 
 环境变量：
 DashScope 推荐：`CHASM_PROVIDER=dashscope`、`DASHSCOPE_API_KEY`、`OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`、`OPENAI_MODEL=qwen3.8-flash`
@@ -16,4 +17,4 @@ DashScope 推荐：`CHASM_PROVIDER=dashscope`、`DASHSCOPE_API_KEY`、`OPENAI_BA
 特色：
 本项目不依赖现成 agent 框架，核心逻辑包括本地工具执行、上下文管理、循环终止、错误处理、日志、记忆、会话历史和 Web 界面。
 支持读文件、写文件、文本替换、目录浏览、文本搜索、命令执行。
-Web 界面提供任务输入、会话状态、会话历史、workspace 视图、文件编辑和结果流。
+Web 界面提供任务输入、会话状态、会话历史、workspace 视图、文件编辑和结果流，深色主题，布局接近轻量 IDE。

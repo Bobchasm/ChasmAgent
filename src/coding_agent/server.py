@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -35,21 +36,38 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
     base_dir = Path(__file__).resolve().parent / "web"
     app.mount("/static", StaticFiles(directory=str(base_dir / "static")), name="static")
     store = SessionStore(settings.workspace_root)
+    project_lock = threading.Lock()
+    active_project_root = settings.workspace_root.resolve()
     index_html = (base_dir / "templates" / "index.html").read_text(encoding="utf-8")
 
     class SessionRequest(BaseModel):
         task: str = Field(min_length=1)
         mode: str = Field(default="auto")
+        project_root: str | None = None
+
+    def get_project_root() -> Path:
+        with project_lock:
+            return active_project_root
+
+    def set_project_root(path: Path) -> Path:
+        nonlocal active_project_root
+        resolved = path.expanduser().resolve()
+        if not resolved.exists() or not resolved.is_dir():
+            raise HTTPException(status_code=400, detail="project path is not a directory")
+        with project_lock:
+            active_project_root = resolved
+        return resolved
 
     def run_session(session_id: str) -> None:
         session = store.get(session_id)
         if session is None:
             return
         store.update(session_id, status="running")
+        project_root = Path(session.project_root or get_project_root())
         agent = CodingAgent(
             llm=_llm(settings),
-            tools=ToolRegistry(settings.workspace_root),
-            memory=MemoryStore(settings.workspace_root),
+            tools=ToolRegistry(project_root),
+            memory=MemoryStore(project_root),
             max_turns=settings.max_turns,
             max_history_messages=settings.max_history_messages,
             max_tool_output_chars=settings.max_tool_output_chars,
@@ -66,16 +84,30 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
     def index():
         return HTMLResponse(index_html)
 
+    @app.get("/api/project")
+    def get_project():
+        root = get_project_root()
+        return {"project_root": str(root), "workspace_root": str(settings.workspace_root)}
+
+    @app.post("/api/project")
+    def choose_project(payload: dict[str, str]):
+        path = (payload.get("path") or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        resolved = set_project_root(Path(path))
+        return {"project_root": str(resolved)}
+
     @app.get("/api/tree")
     def tree():
         items = []
-        for path in sorted(settings.workspace_root.rglob("*")):
+        root = get_project_root()
+        for path in sorted(root.rglob("*")):
             if path.is_dir():
                 continue
             if is_ignored_path(path):
                 continue
-            items.append(str(path.relative_to(settings.workspace_root)))
-        return {"root": str(settings.workspace_root), "files": items[:800]}
+            items.append(str(path.relative_to(root)))
+        return {"root": str(root), "files": items[:800]}
 
     @app.get("/api/sessions")
     def list_sessions(limit: int = 20):
@@ -84,7 +116,7 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
     @app.get("/api/file")
     def get_file(path: str):
         try:
-            content = read_file(settings.workspace_root, path)
+            content = read_file(get_project_root(), path)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="file not found")
         except Exception as exc:  # noqa: BLE001
@@ -98,14 +130,15 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         if not path:
             raise HTTPException(status_code=400, detail="path is required")
         try:
-            message = write_file(settings.workspace_root, path, content)
+            message = write_file(get_project_root(), path, content)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc))
         return {"message": message}
 
     @app.post("/api/sessions")
     def create_session(payload: SessionRequest, background_tasks: BackgroundTasks):
-        record = store.create(payload.task, payload.mode)
+        project_root = Path(payload.project_root) if payload.project_root else get_project_root()
+        record = store.create(payload.task, str(project_root), payload.mode)
         background_tasks.add_task(run_session, record.id)
         return {"session_id": record.id}
 

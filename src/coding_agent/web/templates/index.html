@@ -8,17 +8,24 @@
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <div class="brand">Chasm Agent</div>
-        <div class="subtle">Local coding agent for file edits and shell work.</div>
+      <div class="topbar-left">
+        <div>
+          <div class="brand">Chasm Agent</div>
+          <div class="subtle">Local coding agent for file edits, commands, and memory.</div>
+        </div>
+        <div class="project-bar">
+          <input id="project-path" placeholder="Open local project path" />
+          <button id="open-project">Open Project</button>
+          <div class="project-info" id="project-info"></div>
+        </div>
       </div>
       <div class="status" id="status">idle</div>
     </header>
 
     <main class="layout">
       <aside class="panel sidebar">
-        <div class="panel-title">Workspace</div>
-        <pre id="tree-view" class="stream">Loading...</pre>
+        <div class="panel-title">Files</div>
+        <div id="tree-list" class="file-list">Loading...</div>
         <div class="panel-title" style="margin-top:16px;">Sessions</div>
         <div id="session-list" class="session-list"></div>
       </aside>

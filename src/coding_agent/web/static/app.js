@@ -3,46 +3,95 @@ const runBtn = document.getElementById("run-btn");
 const refreshTreeBtn = document.getElementById("refresh-tree");
 const saveFileBtn = document.getElementById("save-file");
 const sessionView = document.getElementById("session-view");
-const treeView = document.getElementById("tree-view");
+const treeList = document.getElementById("tree-list");
 const sessionList = document.getElementById("session-list");
 const statusEl = document.getElementById("status");
 const filePathInput = document.getElementById("file-path");
 const fileContentEl = document.getElementById("file-content");
+const projectPathInput = document.getElementById("project-path");
+const openProjectBtn = document.getElementById("open-project");
+const projectInfo = document.getElementById("project-info");
 
 let currentSession = null;
 let currentEventSource = null;
+let currentProjectRoot = "";
+let selectedFile = "";
+
+async function apiJson(url, options) {
+  const resp = await fetch(url, options);
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (err) {
+    data = { raw: text };
+  }
+  if (!resp.ok) {
+    const detail = data && (data.detail || data.message || data.raw);
+    throw new Error(detail || resp.statusText);
+  }
+  return data;
+}
+
+async function loadProject() {
+  const data = await apiJson("/api/project");
+  currentProjectRoot = data.project_root;
+  projectPathInput.value = currentProjectRoot;
+  projectInfo.textContent = `root: ${data.project_root}`;
+}
+
+async function openProject() {
+  const path = projectPathInput.value.trim();
+  if (!path) {
+    alert("请输入项目路径");
+    return;
+  }
+  await apiJson("/api/project", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  await loadProject();
+  await loadTree();
+  await loadSessions();
+}
 
 async function loadTree() {
-  const resp = await fetch("/api/tree");
-  if (!resp.ok) return;
-  const data = await resp.json();
-  treeView.textContent = data.files.join("\n");
+  const data = await apiJson("/api/tree");
+  treeList.innerHTML = "";
+  if (!data.files.length) {
+    treeList.textContent = "(empty)";
+    return;
+  }
+  data.files.forEach((file) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "file-item" + (file === selectedFile ? " active" : "");
+    item.textContent = file;
+    item.addEventListener("click", () => openFile(file));
+    treeList.appendChild(item);
+  });
 }
 
 async function loadSessions() {
-  const resp = await fetch("/api/sessions?limit=20");
-  if (!resp.ok) return;
-  const data = await resp.json();
+  const data = await apiJson("/api/sessions?limit=20");
   sessionList.innerHTML = "";
   data.sessions.forEach((session) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "session-item" + (session.id === currentSession ? " active" : "");
-    item.innerHTML = `<div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${session.status} · ${session.updated_at}</div>`;
+    item.innerHTML = `<div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div>`;
     item.addEventListener("click", () => openSession(session.id));
     sessionList.appendChild(item);
   });
 }
 
 async function openFile(path) {
-  const resp = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
-  if (!resp.ok) {
-    alert("无法打开文件: " + path);
-    return;
-  }
-  const data = await resp.json();
+  const data = await apiJson(`/api/file?path=${encodeURIComponent(path)}`);
+  selectedFile = path;
   filePathInput.value = data.path;
   fileContentEl.value = data.content;
+  await loadTree();
 }
 
 async function saveFile() {
@@ -51,27 +100,13 @@ async function saveFile() {
     alert("请先选择或填写文件路径");
     return;
   }
-  const resp = await fetch("/api/file", {
+  const data = await apiJson("/api/file", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path, content: fileContentEl.value }),
   });
-  if (!resp.ok) {
-    const err = await resp.json();
-    alert("保存失败: " + (err.detail || resp.statusText));
-    return;
-  }
-  const data = await resp.json();
   alert(data.message || "saved");
-}
-
-function bindTreeClick() {
-  treeView.addEventListener("click", async (ev) => {
-    const text = window.getSelection().toString() || ev.target.textContent.trim();
-    const path = text.trim();
-    if (!path) return;
-    await openFile(path);
-  });
+  await loadTree();
 }
 
 function renderSessionEvents(events) {
@@ -84,15 +119,13 @@ async function openSession(sessionId) {
     currentEventSource.close();
     currentEventSource = null;
   }
-  const resp = await fetch(`/api/sessions/${sessionId}`);
-  if (!resp.ok) return;
-  const data = await resp.json();
+  const data = await apiJson(`/api/sessions/${sessionId}`);
   statusEl.textContent = data.status;
-  const events = data.events.slice();
-  renderSessionEvents(events);
+  renderSessionEvents(data.events.slice());
   await loadSessions();
 
   currentEventSource = new EventSource(`/api/sessions/${sessionId}/events`);
+  const events = data.events.slice();
   currentEventSource.onmessage = (ev) => {
     try {
       const obj = JSON.parse(ev.data);
@@ -120,25 +153,29 @@ runBtn.addEventListener("click", async () => {
     alert("请输入任务描述");
     return;
   }
-  statusEl.textContent = "starting";
-  const resp = await fetch("/api/sessions", {
+  const data = await apiJson("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ task, mode: document.getElementById("mode").value }),
+    body: JSON.stringify({
+      task,
+      mode: document.getElementById("mode").value,
+      project_root: currentProjectRoot,
+    }),
   });
-  const data = await resp.json();
   await openSession(data.session_id);
 });
 
 refreshTreeBtn.addEventListener("click", async () => {
+  await loadProject();
   await loadTree();
   await loadSessions();
 });
 
+openProjectBtn.addEventListener("click", openProject);
 saveFileBtn.addEventListener("click", saveFile);
 
 function escapeHtml(str) {
-  return str
+  return String(str)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -146,6 +183,7 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
-bindTreeClick();
-loadTree();
-loadSessions();
+loadProject().then(loadTree).then(loadSessions).catch((err) => {
+  console.error(err);
+  projectInfo.textContent = "failed to load project";
+});
