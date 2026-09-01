@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from openai import OpenAI
@@ -15,6 +15,7 @@ class LLMClient:
     base_url: str
     model: str
     extra_body: dict[str, Any] | None = None
+    _client: OpenAI = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)

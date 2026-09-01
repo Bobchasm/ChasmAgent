@@ -31,6 +31,7 @@ class CodingAgent:
     mode: str = "auto"
     events: list[AgentEvent] = field(default_factory=list)
     sink: EventSink | None = None
+    should_stop: Callable[[], bool] | None = None
 
     def _emit(self, kind: str, **payload: Any) -> None:
         event = AgentEvent(kind=kind, payload=payload)
@@ -86,12 +87,20 @@ class CodingAgent:
         self._emit("task", task=task)
 
         for turn in range(1, self.max_turns + 1):
+            if self.should_stop and self.should_stop():
+                final = "Terminated: stopped by user."
+                self._emit("final", text=final)
+                return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
             state.compact(self.max_history_messages)
             self._emit("turn_start", turn=turn, messages=len(state.messages))
             try:
                 response = self.llm.complete(state.messages, self.tools.specs())
             except Exception as exc:  # noqa: BLE001
                 final = f"model_error: {type(exc).__name__}: {exc}"
+                self._emit("final", text=final)
+                return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
+            if self.should_stop and self.should_stop():
+                final = "Terminated: stopped by user."
                 self._emit("final", text=final)
                 return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
 
@@ -117,6 +126,10 @@ class CodingAgent:
                 return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
 
             for call in tool_calls:
+                if self.should_stop and self.should_stop():
+                    final = "Terminated: stopped by user."
+                    self._emit("final", text=final)
+                    return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
                 ok, output = self._handle_tool_call(call, state)
                 if ok:
                     consecutive_tool_failures = 0

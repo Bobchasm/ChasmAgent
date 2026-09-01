@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chasm Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260901-5" />
+    <link rel="stylesheet" href="/static/app.css?v=20260901-12" />
   </head>
   <body>
     <header class="topbar">
@@ -18,24 +18,26 @@
           <div class="project-info" id="project-info"></div>
         </div>
       </div>
-      <div class="status" id="status">idle</div>
+      <div class="topbar-right">
+        <div class="status" id="status">idle</div>
+        <div class="auth-chip" id="auth-user">guest</div>
+        <button id="logout-btn" class="ghost small-btn">Logout</button>
+      </div>
     </header>
 
     <main class="layout">
       <aside class="panel sidebar">
         <div class="panel-title">Files</div>
         <div id="tree-list" class="file-list">Loading...</div>
-        <div class="panel-title" style="margin-top:16px;">Sessions</div>
-        <div id="session-list" class="session-list"></div>
       </aside>
 
       <section class="panel editor">
         <div class="panel-title">Editor</div>
         <input id="file-path" placeholder="Select a file from workspace" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:6px;" />
         <div id="editor" class="code-editor"></div>
-        <div class="controls">
-          <button id="save-file">Save</button>
-          <button id="refresh-tree" class="ghost">Refresh</button>
+        <div class="controls editor-actions">
+          <button id="save-file" class="small-btn">Save</button>
+          <button id="refresh-tree" class="ghost small-btn">Refresh</button>
         </div>
       </section>
 
@@ -46,8 +48,8 @@
             <div class="subtle" id="active-session-label">No conversation selected</div>
           </div>
           <div class="agent-head-actions">
-            <button id="conversation-toggle" class="ghost">Conversations</button>
-            <button id="new-chat">New Chat</button>
+            <button id="conversation-toggle" class="ghost small-btn">Conversations</button>
+            <button id="new-chat" class="small-btn">New Chat</button>
           </div>
         </div>
         <div id="conversation-menu" class="conversation-menu hidden"></div>
@@ -55,11 +57,12 @@
         <div class="composer-box">
           <textarea id="task" placeholder="Ask the agent to make a change..."></textarea>
           <div class="composer-actions">
-            <button id="send-btn">Send</button>
-            <select id="mode">
+            <select id="mode" class="small-select">
               <option value="auto">Auto</option>
               <option value="dry-run">Dry run</option>
             </select>
+            <button id="stop-btn" class="ghost small-btn">Stop</button>
+            <button id="send-btn" class="small-btn">Send</button>
           </div>
         </div>
       </aside>
@@ -86,7 +89,36 @@
       </div>
     </div>
 
+    <div id="auth-modal" class="modal hidden">
+      <div class="modal-card auth-card">
+        <div class="modal-head">
+          <div>
+            <div class="panel-title">Sign in</div>
+            <div class="subtle" id="auth-note">Use a local account to keep sessions and history.</div>
+          </div>
+          <button id="auth-bootstrap" class="ghost">Bootstrap Local</button>
+        </div>
+        <div class="auth-grid">
+          <div class="auth-block">
+            <div class="auth-title">Login</div>
+            <input id="login-username" placeholder="Username" />
+            <input id="login-password" type="password" placeholder="Password" />
+            <button id="login-btn">Login</button>
+          </div>
+          <div class="auth-block">
+            <div class="auth-title">Register</div>
+            <input id="register-username" placeholder="Username" />
+            <input id="register-password" type="password" placeholder="Password" />
+            <button id="register-btn" class="ghost">Create Account</button>
+          </div>
+        </div>
+        <div class="subtle" id="auth-status"></div>
+      </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"></script>
-    <script src="/static/app.js?v=20260901-5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="/static/app.js?v=20260901-12"></script>
   </body>
 </html>

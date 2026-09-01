@@ -23,9 +23,13 @@ class MemoryRecord:
 
 
 class MemoryStore:
-    def __init__(self, workspace_root: Path) -> None:
+    def __init__(self, workspace_root: Path, namespace: str | None = None) -> None:
         self.workspace_root = workspace_root
-        self.path = workspace_root / ".chasm" / "memory.json"
+        self.namespace = namespace
+        if namespace:
+            self.path = workspace_root / ".chasm" / "sessions" / namespace / "memory.json"
+        else:
+            self.path = workspace_root / ".chasm" / "memory.json"
 
     def load(self) -> MemoryRecord:
         if not self.path.exists():
@@ -91,4 +95,3 @@ class MemoryStore:
             parts.append("Recent tasks:")
             parts.extend(f"- {item}" for item in record.recent_tasks[-5:])
         return "\n".join(parts).strip()
-

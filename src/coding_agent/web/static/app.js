@@ -1,10 +1,10 @@
 const taskEl = document.getElementById("task");
 const sendBtn = document.getElementById("send-btn");
+const stopBtn = document.getElementById("stop-btn");
 const refreshTreeBtn = document.getElementById("refresh-tree");
 const saveFileBtn = document.getElementById("save-file");
 const chatView = document.getElementById("chat-view");
 const treeList = document.getElementById("tree-list");
-const sessionList = document.getElementById("session-list");
 const statusEl = document.getElementById("status");
 const filePathInput = document.getElementById("file-path");
 const projectInfo = document.getElementById("project-info");
@@ -21,6 +21,19 @@ const conversationToggle = document.getElementById("conversation-toggle");
 const conversationMenu = document.getElementById("conversation-menu");
 const newChatBtn = document.getElementById("new-chat");
 const activeSessionLabel = document.getElementById("active-session-label");
+const authModal = document.getElementById("auth-modal");
+const authStatusEl = document.getElementById("auth-status");
+const authNoteEl = document.getElementById("auth-note");
+const authUserEl = document.getElementById("auth-user");
+const loginUsername = document.getElementById("login-username");
+const loginPassword = document.getElementById("login-password");
+const registerUsername = document.getElementById("register-username");
+const registerPassword = document.getElementById("register-password");
+const loginBtn = document.getElementById("login-btn");
+const registerBtn = document.getElementById("register-btn");
+const authBootstrapBtn = document.getElementById("auth-bootstrap");
+const logoutBtn = document.getElementById("logout-btn");
+const bootstrapMarker = "chasm_bootstrap_done";
 
 let currentSession = null;
 let currentEventSource = null;
@@ -28,10 +41,12 @@ let currentProjectRoot = "";
 let selectedFile = "";
 let editor = null;
 let browseCurrentPath = "";
+let currentUser = null;
+const openFolders = new Set();
 
 function initEditor() {
   editor = ace.edit("editor");
-  editor.setTheme("ace/theme/monokai");
+  editor.setTheme("ace/theme/textmate");
   editor.session.setMode("ace/mode/text");
   editor.session.setUseWrapMode(true);
   editor.setFontSize(14);
@@ -79,6 +94,10 @@ function setProjectModal(open) {
   projectModal.classList.toggle("hidden", !open);
 }
 
+function setAuthModal(open) {
+  authModal.classList.toggle("hidden", !open);
+}
+
 function setConversationMenu(open) {
   conversationMenu.classList.toggle("hidden", !open);
 }
@@ -103,6 +122,49 @@ async function chooseProject(path) {
     body: JSON.stringify({ path }),
   });
   currentProjectRoot = data.project_root;
+  selectedFile = "";
+  openFolders.clear();
+  await loadProject();
+  await loadTree();
+  await loadSessions();
+}
+
+async function loadAuthStatus() {
+  const data = await apiJson("/api/auth/status");
+  currentUser = data.user || null;
+  authUserEl.textContent = currentUser ? currentUser.username : "guest";
+  authNoteEl.textContent = data.bootstrap_available ? "Bootstrap the local account to start using the workspace." : "Use your account to keep sessions and history.";
+  if (data.authenticated) {
+    setAuthModal(false);
+    await loadProject();
+    await loadTree();
+    await loadSessions();
+    return;
+  }
+  if (data.bootstrap_available && !localStorage.getItem(bootstrapMarker)) {
+    await submitAuth("/api/auth/bootstrap", {});
+    localStorage.setItem(bootstrapMarker, "1");
+    return;
+  }
+  setAuthModal(true);
+  if (data.bootstrap_available) {
+    authStatusEl.textContent = "Local account available";
+  } else {
+    authStatusEl.textContent = "Please sign in";
+  }
+}
+
+async function submitAuth(endpoint, payload) {
+  const data = await apiJson(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  currentUser = data.user || null;
+  authUserEl.textContent = currentUser ? currentUser.username : "guest";
+  authStatusEl.textContent = `Signed in as ${currentUser ? currentUser.username : "guest"}`;
+  localStorage.setItem(bootstrapMarker, "1");
+  setAuthModal(false);
   await loadProject();
   await loadTree();
   await loadSessions();
@@ -144,7 +206,8 @@ function renderTreeNode(node, container, prefix = "") {
   dirNames.forEach((dirName) => {
     const path = prefix ? `${prefix}/${dirName}` : dirName;
     const details = document.createElement("details");
-    details.open = false;
+    details.dataset.path = path;
+    details.open = openFolders.has(path);
     const summary = document.createElement("summary");
     summary.className = "folder-summary";
     summary.textContent = dirName;
@@ -153,6 +216,13 @@ function renderTreeNode(node, container, prefix = "") {
     child.className = "tree-children";
     renderTreeNode(node.dirs.get(dirName), child, path);
     details.appendChild(child);
+    details.addEventListener("toggle", () => {
+      if (details.open) {
+        openFolders.add(path);
+      } else {
+        openFolders.delete(path);
+      }
+    });
     container.appendChild(details);
   });
 
@@ -174,22 +244,35 @@ async function loadTree() {
 }
 
 function renderConversationList(sessions) {
-  sessionList.innerHTML = "";
   conversationMenu.innerHTML = "";
   sessions.forEach((session) => {
-    const makeItem = (cls) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = cls + (session.id === currentSession ? " active" : "");
-      item.innerHTML = `<div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div>`;
-      item.addEventListener("click", () => {
-        setConversationMenu(false);
-        openSession(session.id);
-      });
-      return item;
-    };
-    sessionList.appendChild(makeItem("session-item"));
-    conversationMenu.appendChild(makeItem("conversation-item"));
+    const item = document.createElement("div");
+    item.className = "conversation-item" + (session.id === currentSession ? " active" : "");
+    item.innerHTML = `<div class="conversation-main"><div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div></div><button type="button" class="conversation-delete" title="Delete conversation">×</button>`;
+    item.addEventListener("click", () => {
+      setConversationMenu(false);
+      openSession(session.id);
+    });
+    const deleteBtn = item.querySelector(".conversation-delete");
+    deleteBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!confirm("Delete this conversation?")) {
+        return;
+      }
+      await apiJson(`/api/sessions/${session.id}`, { method: "DELETE" });
+      if (currentSession === session.id) {
+        currentSession = null;
+        activeSessionLabel.textContent = "No conversation selected";
+        statusEl.textContent = "idle";
+        renderChat([]);
+        if (currentEventSource) {
+          currentEventSource.close();
+          currentEventSource = null;
+        }
+      }
+      await loadSessions();
+    });
+    conversationMenu.appendChild(item);
   });
 }
 
@@ -229,13 +312,39 @@ function addChatBubble(kind, title, content) {
   label.className = "chat-label";
   label.textContent = title;
   const body = document.createElement("div");
-  body.textContent = content;
+  body.className = "chat-body";
+  if (kind === "assistant" && window.marked) {
+    const rendered = window.marked.parse(String(content || ""), { breaks: true, gfm: true });
+    body.innerHTML = window.DOMPurify ? window.DOMPurify.sanitize(rendered) : rendered;
+  } else {
+    body.textContent = content;
+  }
   bubble.appendChild(label);
   bubble.appendChild(body);
   chatView.appendChild(bubble);
 }
 
-function renderChat(events) {
+function addThinkingDetails(content, active = false) {
+  const details = document.createElement("details");
+  details.className = "thought-details";
+  const summary = document.createElement("summary");
+  summary.innerHTML = `<span class="thinking-state">${active ? '<span class="thinking-spinner"></span>' : ""}<span>Thinking</span></span>`;
+  const body = document.createElement("div");
+  body.className = "thought-text";
+  body.textContent = content || "";
+  details.appendChild(summary);
+  details.appendChild(body);
+  chatView.appendChild(details);
+}
+
+function setRunning(running) {
+  sendBtn.disabled = running;
+  stopBtn.disabled = !running;
+  sendBtn.textContent = running ? "Sending..." : "Send";
+  statusEl.textContent = running ? "running" : statusEl.textContent;
+}
+
+function renderChat(events, status = "") {
   chatView.innerHTML = "";
   if (!events.length) {
     const placeholder = document.createElement("div");
@@ -244,12 +353,25 @@ function renderChat(events) {
     chatView.appendChild(placeholder);
     return;
   }
+  const running = status === "running";
+  let sawActiveTurn = false;
   events.forEach((event) => {
     const payload = event.payload || {};
     if (event.kind === "task") {
       addChatBubble("user", "You", payload.task || "");
+    } else if (event.kind === "turn_start") {
+      sawActiveTurn = true;
+      const indicator = document.createElement("div");
+      indicator.className = "thinking-badge";
+      if (running) {
+        indicator.innerHTML = '<span class="thinking-spinner"></span><span>Thinking</span>';
+      } else {
+        indicator.textContent = "Done";
+        indicator.classList.add("done");
+      }
+      chatView.appendChild(indicator);
     } else if (event.kind === "reasoning") {
-      addChatBubble("assistant", "Thinking", payload.text || "");
+      addThinkingDetails(payload.text || "", running);
     } else if (event.kind === "tool_call") {
       addChatBubble("tool", `Tool: ${payload.name || ""}`, JSON.stringify(payload.args || {}, null, 2));
     } else if (event.kind === "tool_result") {
@@ -260,6 +382,12 @@ function renderChat(events) {
       addChatBubble("assistant", "Assistant", payload.text || "");
     }
   });
+  if (running && !sawActiveTurn) {
+    const indicator = document.createElement("div");
+    indicator.className = "thinking-badge";
+    indicator.innerHTML = '<span class="thinking-spinner"></span><span>Thinking</span>';
+    chatView.appendChild(indicator);
+  }
   chatView.scrollTop = chatView.scrollHeight;
 }
 
@@ -270,12 +398,16 @@ async function openSession(sessionId) {
     currentEventSource = null;
   }
   const data = await apiJson(`/api/sessions/${sessionId}`);
+  if (data.project_root && data.project_root !== currentProjectRoot) {
+    await chooseProject(data.project_root);
+  }
   statusEl.textContent = data.status;
-  activeSessionLabel.textContent = data.task;
-  renderChat(data.events.slice());
+  activeSessionLabel.textContent = `${data.task} · ${data.project_root}`;
+  setRunning(data.status === "running");
+  renderChat(data.events.slice(), data.status);
   await loadSessions();
 
-  currentEventSource = new EventSource(`/api/sessions/${sessionId}/events`);
+  currentEventSource = new EventSource(`/api/sessions/${sessionId}/events?since=${data.events.length}`);
   const events = data.events.slice();
   currentEventSource.onmessage = (ev) => {
     try {
@@ -287,9 +419,12 @@ async function openSession(sessionId) {
         return;
       }
       events.push(obj);
-      renderChat(events);
+      renderChat(events, statusEl.textContent);
       if (obj.kind === "final") {
-        statusEl.textContent = "done";
+        const finalStatus = obj.payload && obj.payload.text === "Terminated: stopped by user." ? "stopped" : "done";
+        statusEl.textContent = finalStatus;
+        setRunning(false);
+        renderChat(events, finalStatus);
       }
       loadSessions();
     } catch (err) {
@@ -337,17 +472,70 @@ sendBtn.addEventListener("click", async () => {
     alert("请输入任务描述");
     return;
   }
-  const data = await apiJson("/api/sessions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      task,
-      mode: document.getElementById("mode").value,
-      project_root: currentProjectRoot,
-    }),
-  });
-  taskEl.value = "";
-  await openSession(data.session_id);
+  try {
+    setRunning(true);
+    const data = await apiJson("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task,
+        mode: document.getElementById("mode").value,
+        project_root: currentProjectRoot,
+      }),
+    });
+    taskEl.value = "";
+    await openSession(data.session_id);
+  } catch (err) {
+    setRunning(false);
+    addChatBubble("error", "Error", err.message || String(err));
+  }
+});
+
+loginBtn.addEventListener("click", async () => {
+  try {
+    await submitAuth("/api/auth/login", {
+      username: loginUsername.value.trim(),
+      password: loginPassword.value,
+    });
+  } catch (err) {
+    authStatusEl.textContent = err.message || String(err);
+  }
+});
+
+registerBtn.addEventListener("click", async () => {
+  try {
+    await submitAuth("/api/auth/register", {
+      username: registerUsername.value.trim(),
+      password: registerPassword.value,
+    });
+  } catch (err) {
+    authStatusEl.textContent = err.message || String(err);
+  }
+});
+
+authBootstrapBtn.addEventListener("click", async () => {
+  try {
+    await submitAuth("/api/auth/bootstrap", {});
+  } catch (err) {
+    authStatusEl.textContent = err.message || String(err);
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await apiJson("/api/auth/logout", { method: "POST" });
+    currentUser = null;
+    authUserEl.textContent = "guest";
+    setAuthModal(true);
+    authStatusEl.textContent = "Signed out";
+    if (currentEventSource) {
+      currentEventSource.close();
+      currentEventSource = null;
+    }
+    renderChat([]);
+  } catch (err) {
+    authStatusEl.textContent = err.message || String(err);
+  }
 });
 
 refreshTreeBtn.addEventListener("click", async () => {
@@ -361,13 +549,34 @@ closeProjectModalBtn.addEventListener("click", () => setProjectModal(false));
 browseUpBtn.addEventListener("click", async () => {
   if (browseCurrentPath) {
     const parent = browseCurrentPath === "/" ? "/" : browseCurrentPath.split("/").slice(0, -1).join("/") || "/";
-    await loadBrowse(parent);
+    try {
+      await loadBrowse(parent);
+    } catch (err) {
+      browsePathLabel.textContent = err.message || String(err);
+    }
   }
 });
 browseGoBtn.addEventListener("click", async () => {
   const path = browsePathInput.value.trim();
   if (!path) return;
-  await loadBrowse(path);
+  try {
+    await loadBrowse(path);
+  } catch (err) {
+    browsePathLabel.textContent = err.message || String(err);
+  }
+});
+browsePathInput.addEventListener("keydown", async (ev) => {
+  if (ev.key !== "Enter") {
+    return;
+  }
+  ev.preventDefault();
+  const path = browsePathInput.value.trim();
+  if (!path) return;
+  try {
+    await loadBrowse(path);
+  } catch (err) {
+    browsePathLabel.textContent = err.message || String(err);
+  }
 });
 useProjectBtn.addEventListener("click", async () => {
   const path = browsePathInput.value.trim();
@@ -391,6 +600,25 @@ newChatBtn.addEventListener("click", async () => {
   await loadSessions();
 });
 saveFileBtn.addEventListener("click", saveFile);
+stopBtn.addEventListener("click", async () => {
+  if (!currentSession) {
+    return;
+  }
+  try {
+    await apiJson(`/api/sessions/${currentSession}/stop`, { method: "POST" });
+    if (currentEventSource) {
+      currentEventSource.close();
+      currentEventSource = null;
+    }
+    statusEl.textContent = "stopped";
+    setRunning(false);
+    const data = await apiJson(`/api/sessions/${currentSession}`);
+    renderChat(data.events.slice(), "stopped");
+    await loadSessions();
+  } catch (err) {
+    addChatBubble("error", "Error", err.message || String(err));
+  }
+});
 projectModal.addEventListener("click", (ev) => {
   if (ev.target === projectModal) {
     setProjectModal(false);
@@ -407,8 +635,9 @@ function escapeHtml(str) {
 }
 
 initEditor();
-loadProject().then(loadTree).then(loadSessions).catch((err) => {
+setRunning(false);
+loadAuthStatus().catch((err) => {
   console.error(err);
-  projectInfo.textContent = "failed to load project";
-  renderChat([]);
+  authStatusEl.textContent = "Failed to load auth state";
+  setAuthModal(true);
 });

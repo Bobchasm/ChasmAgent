@@ -88,6 +88,7 @@ def serve(
 ):
     settings = AgentSettings.from_env(str(workspace))
     os.environ["CHASM_WORKSPACE"] = str(settings.workspace_root)
+    os.environ["CHASM_DATA_DIR"] = str(settings.data_dir)
     os.environ["CHASM_MODE"] = mode
     os.environ["OPENAI_MODEL"] = settings.model
     os.environ["OPENAI_BASE_URL"] = settings.base_url
