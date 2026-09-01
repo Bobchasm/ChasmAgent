@@ -4,6 +4,7 @@ import fnmatch
 from pathlib import Path
 
 from ..utils import ensure_within_root, truncate_text
+from ..utils import is_ignored_path
 
 
 def read_file(root: Path, path: str, start_line: int | None = None, end_line: int | None = None) -> str:
@@ -41,6 +42,8 @@ def list_files(root: Path, path: str = ".", pattern: str | None = None, max_dept
     for candidate in sorted(base.rglob("*")):
         if candidate.is_dir():
             continue
+        if is_ignored_path(candidate):
+            continue
         rel = candidate.relative_to(root)
         depth = len(rel.parts)
         if depth > max_depth + 1:
@@ -58,6 +61,8 @@ def search_text(root: Path, path: str, pattern: str, ignore_case: bool = False, 
     for candidate in sorted(base.rglob("*")):
         if not candidate.is_file():
             continue
+        if is_ignored_path(candidate):
+            continue
         try:
             text = candidate.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -72,4 +77,3 @@ def search_text(root: Path, path: str, pattern: str, ignore_case: bool = False, 
                 if len(hits) >= max_results:
                     return "\n".join(hits)
     return "\n".join(hits) if hits else "(no matches)"
-

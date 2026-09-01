@@ -10,6 +10,7 @@ from rich.console import Console
 from .agent import CodingAgent
 from .config import AgentSettings
 from .llm import LLMClient
+from .memory import MemoryStore
 from .logging import setup_logging
 from .tools.registry import ToolRegistry
 
@@ -35,6 +36,7 @@ def run(
             extra_body={"enable_thinking": True} if settings.enable_thinking else None,
         ),
         tools=ToolRegistry(settings.workspace_root),
+        memory=MemoryStore(settings.workspace_root),
         max_turns=settings.max_turns,
         max_history_messages=settings.max_history_messages,
         max_tool_output_chars=settings.max_tool_output_chars,
@@ -42,6 +44,38 @@ def run(
     )
     result = agent.run(task)
     console.print(result.final_message)
+
+
+@app.command()
+def chat(
+    workspace: Path = typer.Option(Path("."), "--workspace", "-w", help="Workspace root."),
+    mode: str = typer.Option("auto", "--mode", help="Execution mode."),
+):
+    settings = AgentSettings.from_env(str(workspace))
+    setup_logging(settings.log_level)
+    if not settings.api_key:
+        raise typer.BadParameter("OPENAI_API_KEY or DASHSCOPE_API_KEY is required")
+    agent = CodingAgent(
+        llm=LLMClient(
+            api_key=settings.api_key,
+            base_url=settings.base_url,
+            model=settings.model,
+            extra_body={"enable_thinking": True} if settings.enable_thinking else None,
+        ),
+        tools=ToolRegistry(settings.workspace_root),
+        memory=MemoryStore(settings.workspace_root),
+        max_turns=settings.max_turns,
+        max_history_messages=settings.max_history_messages,
+        max_tool_output_chars=settings.max_tool_output_chars,
+        mode=mode,
+    )
+    console.print("Interactive mode ready. Type `exit` to stop.")
+    while True:
+        task = typer.prompt("task")
+        if task.strip().lower() in {"exit", "quit"}:
+            break
+        result = agent.run(task.strip())
+        console.print(result.final_message)
 
 
 @app.command()

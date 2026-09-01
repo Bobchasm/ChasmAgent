@@ -31,10 +31,6 @@ class CodingAgent:
     mode: str = "auto"
     events: list[AgentEvent] = field(default_factory=list)
     sink: EventSink | None = None
-    # runtime counters
-    _consecutive_tool_failures: int = 0
-    _last_tool_outputs: dict[str, str] = field(default_factory=dict)
-    _no_progress_turns: int = 0
 
     def _emit(self, kind: str, **payload: Any) -> None:
         event = AgentEvent(kind=kind, payload=payload)
@@ -79,25 +75,13 @@ class CodingAgent:
         self._append_tool_result(state, call.id, output)
         self._emit("tool_result", name=call.function.name, ok=ok, output=output)
 
-        # update failure counter
-        if ok:
-            self._consecutive_tool_failures = 0
-        else:
-            self._consecutive_tool_failures += 1
-
-        # track progress by comparing outputs
-        prev = self._last_tool_outputs.get(call.function.name)
-        if prev is None or prev != output:
-            # progress observed
-            self._no_progress_turns = 0
-            self._last_tool_outputs[call.function.name] = output
-        else:
-            # no change for this tool
-            self._no_progress_turns += 1
-
         return ok, output
 
     def run(self, task: str) -> AgentRunResult:
+        self.events = []
+        consecutive_tool_failures = 0
+        last_tool_outputs: dict[str, str] = {}
+        no_progress_turns = 0
         state = self._build_state(task)
         self._emit("task", task=task)
 
@@ -133,19 +117,26 @@ class CodingAgent:
                 return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
 
             for call in tool_calls:
-                self._handle_tool_call(call, state)
+                ok, output = self._handle_tool_call(call, state)
+                if ok:
+                    consecutive_tool_failures = 0
+                else:
+                    consecutive_tool_failures += 1
+                prev = last_tool_outputs.get(call.function.name)
+                if prev is None or prev != output:
+                    no_progress_turns = 0
+                    last_tool_outputs[call.function.name] = output
+                else:
+                    no_progress_turns += 1
 
-            # post-turn termination checks
-            # if too many consecutive tool failures, abort
-            if self._consecutive_tool_failures >= 3:
-                final = f"Terminated: {self._consecutive_tool_failures} consecutive tool failures."
+            if consecutive_tool_failures >= 3:
+                final = f"Terminated: {consecutive_tool_failures} consecutive tool failures."
                 self._emit("final", text=final)
                 if self.memory:
                     self.memory.update_from_run(task, final, self.events)
                 return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
 
-            # if no meaningful progress after several turns, abort
-            if self._no_progress_turns >= 4:
+            if no_progress_turns >= 4:
                 final = "Terminated: no progress detected across multiple turns."
                 self._emit("final", text=final)
                 if self.memory:

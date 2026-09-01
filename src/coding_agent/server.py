@@ -1,22 +1,31 @@
 from __future__ import annotations
 
-import threading
+import json
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from fastapi import Query
 
 from .agent import CodingAgent
 from .config import AgentSettings
 from .llm import LLMClient
 from .logging import setup_logging
-from .session import SessionStore
 from .memory import MemoryStore
-import json
+from .session import SessionStore
+from .tools.filesystem import read_file, write_file
 from .tools.registry import ToolRegistry
+from .utils import is_ignored_path
+
+
+def _llm(settings: AgentSettings) -> LLMClient:
+    return LLMClient(
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        model=settings.model,
+        extra_body={"enable_thinking": True} if settings.enable_thinking else None,
+    )
 
 
 def build_app(settings: AgentSettings | None = None) -> FastAPI:
@@ -25,7 +34,7 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
     app = FastAPI(title="Chasm Agent")
     base_dir = Path(__file__).resolve().parent / "web"
     app.mount("/static", StaticFiles(directory=str(base_dir / "static")), name="static")
-    store = SessionStore()
+    store = SessionStore(settings.workspace_root)
     index_html = (base_dir / "templates" / "index.html").read_text(encoding="utf-8")
 
     class SessionRequest(BaseModel):
@@ -36,14 +45,9 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         session = store.get(session_id)
         if session is None:
             return
-        session.status = "running"
+        store.update(session_id, status="running")
         agent = CodingAgent(
-            llm=LLMClient(
-                api_key=settings.api_key,
-                base_url=settings.base_url,
-                model=settings.model,
-                extra_body={"enable_thinking": True} if settings.enable_thinking else None,
-            ),
+            llm=_llm(settings),
             tools=ToolRegistry(settings.workspace_root),
             memory=MemoryStore(settings.workspace_root),
             max_turns=settings.max_turns,
@@ -54,15 +58,50 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         )
         try:
             result = agent.run(session.task)
-            session.result = result.final_message
-            session.status = "done"
+            store.update(session_id, result=result.final_message, status="done")
         except Exception as exc:  # noqa: BLE001
-            session.result = f"{type(exc).__name__}: {exc}"
-            session.status = "error"
+            store.update(session_id, result=f"{type(exc).__name__}: {exc}", status="error")
 
     @app.get("/", response_class=HTMLResponse)
     def index():
         return HTMLResponse(index_html)
+
+    @app.get("/api/tree")
+    def tree():
+        items = []
+        for path in sorted(settings.workspace_root.rglob("*")):
+            if path.is_dir():
+                continue
+            if is_ignored_path(path):
+                continue
+            items.append(str(path.relative_to(settings.workspace_root)))
+        return {"root": str(settings.workspace_root), "files": items[:800]}
+
+    @app.get("/api/sessions")
+    def list_sessions(limit: int = 20):
+        return {"sessions": [item.to_dict() for item in store.list_recent(limit)]}
+
+    @app.get("/api/file")
+    def get_file(path: str):
+        try:
+            content = read_file(settings.workspace_root, path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="file not found")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"path": path, "content": content}
+
+    @app.post("/api/file")
+    def save_file(payload: dict[str, str]):
+        path = (payload.get("path") or "").strip()
+        content = payload.get("content", "")
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        try:
+            message = write_file(settings.workspace_root, path, content)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"message": message}
 
     @app.post("/api/sessions")
     def create_session(payload: SessionRequest, background_tasks: BackgroundTasks):
@@ -75,78 +114,33 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         record = store.get(session_id)
         if record is None:
             raise HTTPException(status_code=404, detail="session not found")
-        return record
+        return record.to_dict()
 
-    @app.get('/api/sessions/{session_id}/events')
+    @app.get("/api/sessions/{session_id}/events")
     def stream_session_events(session_id: str):
         record = store.get(session_id)
         if record is None:
-            raise HTTPException(status_code=404, detail='session not found')
+            raise HTTPException(status_code=404, detail="session not found")
 
         def event_gen():
             last_idx = 0
             while True:
-                # yield any new events
                 events = store.get_events_since(session_id, last_idx)
-                if events:
-                    for ev in events:
-                        payload = json.dumps(ev, ensure_ascii=False)
-                        yield f"data: {payload}\n\n"
-                        last_idx += 1
+                for ev in events:
+                    payload = json.dumps(ev, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                    last_idx += 1
 
                 rec = store.get(session_id)
                 if rec is None:
                     break
-                # if done and no more events, finish
                 if rec.status in {"done", "error"} and last_idx >= len(rec.events):
                     break
 
-                # wait for new events or timeout
                 store.wait_for_events(session_id, last_idx, timeout=15)
 
-            # final sentinel
-            yield "data: {\"kind\": \"end\", \"payload\": {}}\n\n"
+            yield 'data: {"kind": "end", "payload": {}}\n\n'
 
-        return StreamingResponse(event_gen(), media_type='text/event-stream')
-
-    @app.get("/api/tree")
-    def tree():
-        items = []
-        for path in sorted(settings.workspace_root.rglob("*")):
-            if path.is_dir():
-                continue
-            rel = path.relative_to(settings.workspace_root)
-            items.append(str(rel))
-        return {"root": str(settings.workspace_root), "files": items[:800]}
-
-    @app.get("/api/file")
-    def get_file(path: str = Query(..., description="Relative file path")):
-        try:
-            file_path = settings.workspace_root.joinpath(path).resolve()
-            # ensure within workspace
-            if settings.workspace_root not in file_path.parents and file_path != settings.workspace_root:
-                raise HTTPException(status_code=400, detail="path outside workspace")
-            if not file_path.exists() or not file_path.is_file():
-                raise HTTPException(status_code=404, detail="file not found")
-            content = file_path.read_text(encoding="utf-8")
-            return {"path": str(path), "content": content}
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
-
-    class FileWrite(BaseModel):
-        path: str
-        content: str
-
-    @app.post("/api/file")
-    def write_file(payload: FileWrite):
-        try:
-            file_path = settings.workspace_root.joinpath(payload.path).resolve()
-            if settings.workspace_root not in file_path.parents and file_path != settings.workspace_root:
-                raise HTTPException(status_code=400, detail="path outside workspace")
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(payload.content, encoding="utf-8")
-            return {"ok": True, "message": f"wrote {payload.path}"}
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+        return StreamingResponse(event_gen(), media_type="text/event-stream")
 
     return app
