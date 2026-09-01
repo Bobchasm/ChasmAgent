@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chasm Agent</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <div class="brand">Chasm Agent</div>
+        <div class="subtle">Local coding agent for file edits and shell work.</div>
+      </div>
+      <div class="status" id="status">idle</div>
+    </header>
+
+    <main class="layout">
+      <section class="panel composer">
+        <label for="task">Task</label>
+        <textarea id="task" placeholder="Describe the coding job you want the agent to do."></textarea>
+        <div class="controls">
+          <select id="mode">
+            <option value="auto">Auto</option>
+            <option value="dry-run">Dry run</option>
+          </select>
+          <button id="run-btn">Run</button>
+          <button id="refresh-btn" class="ghost">Refresh</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Session</div>
+        <pre id="session-view" class="stream">No session yet.</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Workspace</div>
+        <pre id="tree-view" class="stream">Loading...</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Result</div>
+        <pre id="result-view" class="stream"></pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
