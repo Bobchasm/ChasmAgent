@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chasm Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260901-4" />
+    <link rel="stylesheet" href="/static/app.css?v=20260901-5" />
   </head>
   <body>
     <header class="topbar">
@@ -40,19 +40,27 @@
       </section>
 
       <aside class="panel session-panel">
-        <div class="panel-title">Agent</div>
-        <label for="task">Task</label>
-        <textarea id="task" placeholder="Describe the coding job you want the agent to do."></textarea>
-        <div class="controls">
-          <select id="mode">
-            <option value="auto">Auto</option>
-            <option value="dry-run">Dry run</option>
-          </select>
-          <button id="run-btn">Run</button>
+        <div class="agent-head">
+          <div class="agent-head-left">
+            <div class="panel-title">Agent</div>
+            <div class="subtle" id="active-session-label">No conversation selected</div>
+          </div>
+          <div class="agent-head-actions">
+            <button id="conversation-toggle" class="ghost">Conversations</button>
+            <button id="new-chat">New Chat</button>
+          </div>
         </div>
-        <div style="margin-top:12px;">
-          <div class="panel-title" style="margin-top:6px;">Session</div>
-          <pre id="session-view" class="stream">No session yet.</pre>
+        <div id="conversation-menu" class="conversation-menu hidden"></div>
+        <div id="chat-view" class="chat-view"></div>
+        <div class="composer-box">
+          <textarea id="task" placeholder="Ask the agent to make a change..."></textarea>
+          <div class="composer-actions">
+            <button id="send-btn">Send</button>
+            <select id="mode">
+              <option value="auto">Auto</option>
+              <option value="dry-run">Dry run</option>
+            </select>
+          </div>
         </div>
       </aside>
     </main>
@@ -79,6 +87,6 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"></script>
-    <script src="/static/app.js?v=20260901-4"></script>
+    <script src="/static/app.js?v=20260901-5"></script>
   </body>
 </html>

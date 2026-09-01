@@ -1,8 +1,8 @@
 const taskEl = document.getElementById("task");
-const runBtn = document.getElementById("run-btn");
+const sendBtn = document.getElementById("send-btn");
 const refreshTreeBtn = document.getElementById("refresh-tree");
 const saveFileBtn = document.getElementById("save-file");
-const sessionView = document.getElementById("session-view");
+const chatView = document.getElementById("chat-view");
 const treeList = document.getElementById("tree-list");
 const sessionList = document.getElementById("session-list");
 const statusEl = document.getElementById("status");
@@ -17,6 +17,10 @@ const useProjectBtn = document.getElementById("use-project");
 const browsePathInput = document.getElementById("browse-path");
 const browseList = document.getElementById("browse-list");
 const browsePathLabel = document.getElementById("browse-path-label");
+const conversationToggle = document.getElementById("conversation-toggle");
+const conversationMenu = document.getElementById("conversation-menu");
+const newChatBtn = document.getElementById("new-chat");
+const activeSessionLabel = document.getElementById("active-session-label");
 
 let currentSession = null;
 let currentEventSource = null;
@@ -73,6 +77,10 @@ function languageModeFor(path) {
 
 function setProjectModal(open) {
   projectModal.classList.toggle("hidden", !open);
+}
+
+function setConversationMenu(open) {
+  conversationMenu.classList.toggle("hidden", !open);
 }
 
 async function loadProject() {
@@ -136,7 +144,7 @@ function renderTreeNode(node, container, prefix = "") {
   dirNames.forEach((dirName) => {
     const path = prefix ? `${prefix}/${dirName}` : dirName;
     const details = document.createElement("details");
-    details.open = true;
+    details.open = false;
     const summary = document.createElement("summary");
     summary.className = "folder-summary";
     summary.textContent = dirName;
@@ -165,17 +173,29 @@ async function loadTree() {
   renderTreeNode(root, treeList);
 }
 
+function renderConversationList(sessions) {
+  sessionList.innerHTML = "";
+  conversationMenu.innerHTML = "";
+  sessions.forEach((session) => {
+    const makeItem = (cls) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = cls + (session.id === currentSession ? " active" : "");
+      item.innerHTML = `<div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div>`;
+      item.addEventListener("click", () => {
+        setConversationMenu(false);
+        openSession(session.id);
+      });
+      return item;
+    };
+    sessionList.appendChild(makeItem("session-item"));
+    conversationMenu.appendChild(makeItem("conversation-item"));
+  });
+}
+
 async function loadSessions() {
   const data = await apiJson("/api/sessions?limit=20");
-  sessionList.innerHTML = "";
-  data.sessions.forEach((session) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "session-item" + (session.id === currentSession ? " active" : "");
-    item.innerHTML = `<div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div>`;
-    item.addEventListener("click", () => openSession(session.id));
-    sessionList.appendChild(item);
-  });
+  renderConversationList(data.sessions);
 }
 
 async function openFile(path) {
@@ -202,8 +222,45 @@ async function saveFile() {
   await loadTree();
 }
 
-function renderSessionEvents(events) {
-  sessionView.textContent = JSON.stringify(events, null, 2);
+function addChatBubble(kind, title, content) {
+  const bubble = document.createElement("div");
+  bubble.className = `chat-message ${kind}`;
+  const label = document.createElement("div");
+  label.className = "chat-label";
+  label.textContent = title;
+  const body = document.createElement("div");
+  body.textContent = content;
+  bubble.appendChild(label);
+  bubble.appendChild(body);
+  chatView.appendChild(bubble);
+}
+
+function renderChat(events) {
+  chatView.innerHTML = "";
+  if (!events.length) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "subtle";
+    placeholder.textContent = "No conversation loaded.";
+    chatView.appendChild(placeholder);
+    return;
+  }
+  events.forEach((event) => {
+    const payload = event.payload || {};
+    if (event.kind === "task") {
+      addChatBubble("user", "You", payload.task || "");
+    } else if (event.kind === "reasoning") {
+      addChatBubble("assistant", "Thinking", payload.text || "");
+    } else if (event.kind === "tool_call") {
+      addChatBubble("tool", `Tool: ${payload.name || ""}`, JSON.stringify(payload.args || {}, null, 2));
+    } else if (event.kind === "tool_result") {
+      addChatBubble("tool", `Result: ${payload.name || ""}`, payload.output || "");
+    } else if (event.kind === "tool_error") {
+      addChatBubble("error", `Tool error: ${payload.name || ""}`, payload.error || "");
+    } else if (event.kind === "final") {
+      addChatBubble("assistant", "Assistant", payload.text || "");
+    }
+  });
+  chatView.scrollTop = chatView.scrollHeight;
 }
 
 async function openSession(sessionId) {
@@ -214,7 +271,8 @@ async function openSession(sessionId) {
   }
   const data = await apiJson(`/api/sessions/${sessionId}`);
   statusEl.textContent = data.status;
-  renderSessionEvents(data.events.slice());
+  activeSessionLabel.textContent = data.task;
+  renderChat(data.events.slice());
   await loadSessions();
 
   currentEventSource = new EventSource(`/api/sessions/${sessionId}/events`);
@@ -229,7 +287,7 @@ async function openSession(sessionId) {
         return;
       }
       events.push(obj);
-      renderSessionEvents(events);
+      renderChat(events);
       if (obj.kind === "final") {
         statusEl.textContent = "done";
       }
@@ -273,7 +331,7 @@ async function loadBrowse(path) {
   });
 }
 
-runBtn.addEventListener("click", async () => {
+sendBtn.addEventListener("click", async () => {
   const task = taskEl.value.trim();
   if (!task) {
     alert("请输入任务描述");
@@ -288,6 +346,7 @@ runBtn.addEventListener("click", async () => {
       project_root: currentProjectRoot,
     }),
   });
+  taskEl.value = "";
   await openSession(data.session_id);
 });
 
@@ -316,6 +375,21 @@ useProjectBtn.addEventListener("click", async () => {
   await chooseProject(path);
   setProjectModal(false);
 });
+conversationToggle.addEventListener("click", () => {
+  conversationMenu.classList.toggle("hidden");
+});
+newChatBtn.addEventListener("click", async () => {
+  currentSession = null;
+  activeSessionLabel.textContent = "No conversation selected";
+  statusEl.textContent = "idle";
+  taskEl.value = "";
+  if (currentEventSource) {
+    currentEventSource.close();
+    currentEventSource = null;
+  }
+  renderChat([]);
+  await loadSessions();
+});
 saveFileBtn.addEventListener("click", saveFile);
 projectModal.addEventListener("click", (ev) => {
   if (ev.target === projectModal) {
@@ -336,4 +410,5 @@ initEditor();
 loadProject().then(loadTree).then(loadSessions).catch((err) => {
   console.error(err);
   projectInfo.textContent = "failed to load project";
+  renderChat([]);
 });
