@@ -16,6 +16,7 @@ class SessionRecord:
     user_id: int = 1
     mode: str = "auto"
     status: str = "queued"
+    title: str = ""
     created_at: str = ""
     updated_at: str = ""
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -27,6 +28,7 @@ class SessionRecord:
             "id": self.id,
             "user_id": self.user_id,
             "task": self.task,
+            "title": self.title,
             "project_root": self.project_root,
             "mode": self.mode,
             "status": self.status,
@@ -43,6 +45,7 @@ class SessionRecord:
             id=payload["id"],
             user_id=int(payload.get("user_id", 1)),
             task=payload.get("task", ""),
+            title=payload.get("title", ""),
             project_root=payload.get("project_root", ""),
             mode=payload.get("mode", "auto"),
             status=payload.get("status", "queued"),

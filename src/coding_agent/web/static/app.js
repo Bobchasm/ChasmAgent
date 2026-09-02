@@ -13,14 +13,20 @@ const projectModal = document.getElementById("project-modal");
 const closeProjectModalBtn = document.getElementById("close-project-modal");
 const browseUpBtn = document.getElementById("browse-up");
 const browseGoBtn = document.getElementById("browse-go");
-const useProjectBtn = document.getElementById("use-project");
 const browsePathInput = document.getElementById("browse-path");
 const browseList = document.getElementById("browse-list");
 const browsePathLabel = document.getElementById("browse-path-label");
+const pathModalTitle = document.getElementById("path-modal-title");
+const pathModalExtra = document.getElementById("path-modal-extra");
+const pathModalName = document.getElementById("path-modal-name");
+const newFileBtn = document.getElementById("new-file-btn");
+const newFolderBtn = document.getElementById("new-folder-btn");
+const refreshTreeSidebarBtn = document.getElementById("refresh-tree-sidebar");
 const conversationToggle = document.getElementById("conversation-toggle");
 const conversationMenu = document.getElementById("conversation-menu");
 const newChatBtn = document.getElementById("new-chat");
 const activeSessionLabel = document.getElementById("active-session-label");
+const sessionPanel = document.querySelector(".session-panel");
 const authModal = document.getElementById("auth-modal");
 const authStatusEl = document.getElementById("auth-status");
 const authNoteEl = document.getElementById("auth-note");
@@ -34,6 +40,11 @@ const registerBtn = document.getElementById("register-btn");
 const authBootstrapBtn = document.getElementById("auth-bootstrap");
 const logoutBtn = document.getElementById("logout-btn");
 const bootstrapMarker = "chasm_bootstrap_done";
+const layoutEl = document.querySelector(".layout");
+const leftResizeHandle = document.getElementById("left-resize");
+const rightResizeHandle = document.getElementById("right-resize");
+const leftWidthKey = "chasm_left_panel_width";
+const rightWidthKey = "chasm_right_panel_width";
 
 let currentSession = null;
 let currentEventSource = null;
@@ -43,8 +54,77 @@ let editor = null;
 let browseCurrentPath = "";
 let currentUser = null;
 const openFolders = new Set();
+let pathModalMode = "project";
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function setPanelWidth(side, value) {
+  const key = side === "left" ? leftWidthKey : rightWidthKey;
+  const min = side === "left" ? 200 : 320;
+  const max = side === "left" ? 420 : 560;
+  const next = `${clamp(value, min, max)}px`;
+  document.documentElement.style.setProperty(side === "left" ? "--left-panel-width" : "--right-panel-width", next);
+  localStorage.setItem(key, next);
+}
+
+function restorePanelWidths() {
+  const left = localStorage.getItem(leftWidthKey);
+  const right = localStorage.getItem(rightWidthKey);
+  if (left) {
+    document.documentElement.style.setProperty("--left-panel-width", left);
+  }
+  if (right) {
+    document.documentElement.style.setProperty("--right-panel-width", right);
+  }
+}
+
+function initResizablePanels() {
+  restorePanelWidths();
+  const setup = (handle, side) => {
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    handle.addEventListener("pointerdown", (ev) => {
+      if (window.matchMedia("(max-width: 1200px)").matches) {
+        return;
+      }
+      dragging = true;
+      startX = ev.clientX;
+      const styles = getComputedStyle(document.documentElement);
+      startWidth = parseFloat(styles.getPropertyValue(side === "left" ? "--left-panel-width" : "--right-panel-width")) || (side === "left" ? 260 : 380);
+      layoutEl.classList.add("resizing");
+      handle.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+
+    handle.addEventListener("pointermove", (ev) => {
+      if (!dragging) return;
+      const delta = ev.clientX - startX;
+      const nextWidth = side === "left" ? startWidth + delta : startWidth - delta;
+      setPanelWidth(side, nextWidth);
+    });
+
+    const stop = () => {
+      if (!dragging) return;
+      dragging = false;
+      layoutEl.classList.remove("resizing");
+    };
+
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+    window.addEventListener("pointerup", stop);
+  };
+
+  setup(leftResizeHandle, "left");
+  setup(rightResizeHandle, "right");
+}
 
 function initEditor() {
+  ace.config.set("basePath", "https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/");
+  ace.config.set("modePath", "https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/");
   editor = ace.edit("editor");
   editor.setTheme("ace/theme/textmate");
   editor.session.setMode("ace/mode/text");
@@ -78,20 +158,63 @@ async function apiJson(url, options) {
 function languageModeFor(path) {
   const lower = String(path).toLowerCase();
   if (lower.endsWith(".py")) return "ace/mode/python";
-  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) return "ace/mode/javascript";
+  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs") || lower.endsWith(".jsx")) return "ace/mode/javascript";
   if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "ace/mode/typescript";
   if (lower.endsWith(".json")) return "ace/mode/json";
+  if (lower.endsWith(".json5")) return "ace/mode/json5";
   if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "ace/mode/yaml";
   if (lower.endsWith(".md")) return "ace/mode/markdown";
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "ace/mode/html";
   if (lower.endsWith(".css")) return "ace/mode/css";
-  if (lower.endsWith(".sh")) return "ace/mode/sh";
+  if (lower.endsWith(".scss")) return "ace/mode/scss";
+  if (lower.endsWith(".less")) return "ace/mode/less";
+  if (lower.endsWith(".sh") || lower.endsWith(".bash") || lower.endsWith(".zsh")) return "ace/mode/sh";
+  if (lower.endsWith(".c") || lower.endsWith(".h") || lower.endsWith(".cc") || lower.endsWith(".cpp") || lower.endsWith(".cxx") || lower.endsWith(".hpp") || lower.endsWith(".hh") || lower.endsWith(".ipp")) return "ace/mode/c_cpp";
+  if (lower.endsWith(".java")) return "ace/mode/java";
+  if (lower.endsWith(".go")) return "ace/mode/golang";
+  if (lower.endsWith(".rs")) return "ace/mode/rust";
+  if (lower.endsWith(".cs")) return "ace/mode/csharp";
+  if (lower.endsWith(".php")) return "ace/mode/php";
+  if (lower.endsWith(".rb")) return "ace/mode/ruby";
+  if (lower.endsWith(".lua")) return "ace/mode/lua";
+  if (lower.endsWith(".swift")) return "ace/mode/swift";
+  if (lower.endsWith(".kt") || lower.endsWith(".kts")) return "ace/mode/kotlin";
+  if (lower.endsWith(".scala")) return "ace/mode/scala";
+  if (lower.endsWith(".sql")) return "ace/mode/sql";
+  if (lower.endsWith(".xml") || lower.endsWith(".svg")) return "ace/mode/xml";
+  if (lower.endsWith(".toml")) return "ace/mode/toml";
+  if (lower.endsWith(".ini") || lower.endsWith(".cfg") || lower.endsWith(".conf")) return "ace/mode/ini";
+  if (lower.endsWith(".properties")) return "ace/mode/properties";
+  if (lower.endsWith(".rs.in")) return "ace/mode/rust";
+  if (lower.endsWith(".ps1")) return "ace/mode/powershell";
+  if (lower.endsWith(".r")) return "ace/mode/r";
+  if (lower.endsWith(".dart")) return "ace/mode/dart";
+  if (lower.endsWith(".pl") || lower.endsWith(".pm")) return "ace/mode/perl";
+  if (lower.endsWith(".hs")) return "ace/mode/haskell";
+  if (lower.endsWith(".el")) return "ace/mode/lisp";
+  if (lower.endsWith(".vue")) return "ace/mode/html";
+  if (lower.endsWith(".dockerfile") || lower.endsWith("dockerfile")) return "ace/mode/dockerfile";
+  if (lower.endsWith(".mk") || lower.endsWith("makefile")) return "ace/mode/makefile";
   if (lower.endsWith(".toml")) return "ace/mode/toml";
   return "ace/mode/text";
 }
 
 function setProjectModal(open) {
   projectModal.classList.toggle("hidden", !open);
+}
+
+function setPathModalMode(mode) {
+  pathModalMode = mode;
+  pathModalExtra.classList.toggle("hidden", mode === "project");
+  if (mode === "project") {
+    pathModalTitle.textContent = "Project Picker";
+  } else if (mode === "new-file") {
+    pathModalTitle.textContent = "New File";
+  } else if (mode === "new-folder") {
+    pathModalTitle.textContent = "New Folder";
+  } else if (mode === "save-as") {
+    pathModalTitle.textContent = "Save As";
+  }
 }
 
 function setAuthModal(open) {
@@ -109,8 +232,18 @@ async function loadProject() {
 }
 
 async function openProjectModal() {
+  setPathModalMode("project");
   browseCurrentPath = currentProjectRoot || "";
   browsePathInput.value = browseCurrentPath;
+  await loadBrowse(browseCurrentPath);
+  setProjectModal(true);
+}
+
+async function openPathDialog(mode, initialPath = "") {
+  setPathModalMode(mode);
+  browseCurrentPath = currentProjectRoot || "";
+  browsePathInput.value = initialPath || browseCurrentPath;
+  pathModalName.value = "";
   await loadBrowse(browseCurrentPath);
   setProjectModal(true);
 }
@@ -190,12 +323,67 @@ function buildTree(files) {
   return root;
 }
 
+function createTreeDeleteButton(path, kind) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "tree-action";
+  button.title = `Delete ${kind}`;
+  button.textContent = "×";
+  button.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!confirm(`Delete this ${kind}?`)) {
+      return;
+    }
+    await apiJson(`/api/path?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+    if (selectedFile === path || selectedFile.startsWith(`${path}/`)) {
+      selectedFile = "";
+      filePathInput.value = "";
+      editor.setValue("", -1);
+      editor.session.setMode("ace/mode/text");
+    }
+    for (const folder of Array.from(openFolders)) {
+      if (folder === path || folder.startsWith(`${path}/`)) {
+        openFolders.delete(folder);
+      }
+    }
+    await loadTree();
+  });
+  return button;
+}
+
+function createTreeRefreshButton() {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost small-btn";
+  button.textContent = "Refresh";
+  button.addEventListener("click", async () => {
+    await loadProject();
+    await loadTree();
+  });
+  return button;
+}
+
 function createFileButton(name, path) {
-  const item = document.createElement("button");
-  item.type = "button";
+  const item = document.createElement("div");
   item.className = "file-item" + (selectedFile === path ? " active" : "");
-  item.textContent = name;
+  item.setAttribute("role", "button");
+  item.tabIndex = 0;
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  label.textContent = name;
+  const actions = document.createElement("span");
+  actions.className = "tree-actions";
+  actions.appendChild(createTreeDeleteButton(path, "file"));
+  item.appendChild(label);
+  item.appendChild(actions);
   item.addEventListener("click", () => openFile(path));
+  item.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      openFile(path);
+    }
+  });
   return item;
 }
 
@@ -210,7 +398,14 @@ function renderTreeNode(node, container, prefix = "") {
     details.open = openFolders.has(path);
     const summary = document.createElement("summary");
     summary.className = "folder-summary";
-    summary.textContent = dirName;
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = dirName;
+    const actions = document.createElement("span");
+    actions.className = "tree-actions";
+    actions.appendChild(createTreeDeleteButton(path, "folder"));
+    summary.appendChild(label);
+    summary.appendChild(actions);
     details.appendChild(summary);
     const child = document.createElement("div");
     child.className = "tree-children";
@@ -248,7 +443,9 @@ function renderConversationList(sessions) {
   sessions.forEach((session) => {
     const item = document.createElement("div");
     item.className = "conversation-item" + (session.id === currentSession ? " active" : "");
-    item.innerHTML = `<div class="conversation-main"><div>${escapeHtml(session.task.slice(0, 60))}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div></div><button type="button" class="conversation-delete" title="Delete conversation">×</button>`;
+    const title = session.title || session.task.slice(0, 40);
+    item.title = session.task;
+    item.innerHTML = `<div class="conversation-main"><div>${escapeHtml(title)}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div></div><button type="button" class="conversation-delete" title="Delete conversation">×</button>`;
     item.addEventListener("click", () => {
       setConversationMenu(false);
       openSession(session.id);
@@ -293,7 +490,7 @@ async function openFile(path) {
 async function saveFile() {
   const path = filePathInput.value.trim();
   if (!path) {
-    alert("请先选择或填写文件路径");
+    await openPathDialog("save-as", currentProjectRoot || "");
     return;
   }
   const data = await apiJson("/api/file", {
@@ -324,17 +521,41 @@ function addChatBubble(kind, title, content) {
   chatView.appendChild(bubble);
 }
 
-function addThinkingDetails(content, active = false) {
+function renderFoldedEvent(kind, title, content, open = false) {
   const details = document.createElement("details");
-  details.className = "thought-details";
+  details.className = `event-details ${kind}`;
+  details.open = open;
   const summary = document.createElement("summary");
-  summary.innerHTML = `<span class="thinking-state">${active ? '<span class="thinking-spinner"></span>' : ""}<span>Thinking</span></span>`;
+  summary.innerHTML = `<span class="event-summary-title">${escapeHtml(title)}</span><span class="event-summary-pill">${kind}</span>`;
   const body = document.createElement("div");
-  body.className = "thought-text";
-  body.textContent = content || "";
+  body.className = "event-text";
+  if (kind === "assistant" && window.marked) {
+    const rendered = window.marked.parse(String(content || ""), { breaks: true, gfm: true });
+    body.innerHTML = window.DOMPurify ? window.DOMPurify.sanitize(rendered) : rendered;
+  } else {
+    body.textContent = content || "";
+  }
+  details.appendChild(summary);
+  details.appendChild(body);
+  return details;
+}
+
+function createTurnBlock(turnIndex, running) {
+  const details = document.createElement("details");
+  details.className = "turn-details";
+  details.open = false;
+  const summary = document.createElement("summary");
+  summary.className = "turn-summary";
+  const state = running
+    ? '<span class="thinking-spinner"></span><span>Thinking</span>'
+    : '<span class="turn-done">Done</span>';
+  summary.innerHTML = `<span class="turn-label">Turn ${turnIndex}</span><span class="turn-state">${state}</span>`;
+  const body = document.createElement("div");
+  body.className = "turn-body";
   details.appendChild(summary);
   details.appendChild(body);
   chatView.appendChild(details);
+  return body;
 }
 
 function setRunning(running) {
@@ -354,39 +575,79 @@ function renderChat(events, status = "") {
     return;
   }
   const running = status === "running";
-  let sawActiveTurn = false;
+  let turnIndex = 0;
+  let currentTurnBody = null;
   events.forEach((event) => {
     const payload = event.payload || {};
     if (event.kind === "task") {
       addChatBubble("user", "You", payload.task || "");
+    } else if (event.kind === "plan") {
+      chatView.appendChild(renderFoldedEvent("plan", "Plan", payload.text || "", false));
     } else if (event.kind === "turn_start") {
-      sawActiveTurn = true;
-      const indicator = document.createElement("div");
-      indicator.className = "thinking-badge";
-      if (running) {
-        indicator.innerHTML = '<span class="thinking-spinner"></span><span>Thinking</span>';
-      } else {
-        indicator.textContent = "Done";
-        indicator.classList.add("done");
-      }
-      chatView.appendChild(indicator);
+      turnIndex += 1;
+      currentTurnBody = createTurnBlock(turnIndex, running);
     } else if (event.kind === "reasoning") {
-      addThinkingDetails(payload.text || "", running);
+      if (!currentTurnBody) {
+        turnIndex += 1;
+        currentTurnBody = createTurnBlock(turnIndex, running);
+      }
+      const details = document.createElement("details");
+      details.className = "event-details reasoning";
+      details.open = false;
+      const summary = document.createElement("summary");
+      summary.innerHTML = '<span class="event-summary-title">Reasoning</span><span class="event-summary-pill">hidden</span>';
+      const body = document.createElement("div");
+      body.className = "event-text";
+      body.textContent = payload.text || "";
+      details.appendChild(summary);
+      details.appendChild(body);
+      currentTurnBody.appendChild(details);
     } else if (event.kind === "tool_call") {
-      addChatBubble("tool", `Tool: ${payload.name || ""}`, JSON.stringify(payload.args || {}, null, 2));
+      if (!currentTurnBody) {
+        turnIndex += 1;
+        currentTurnBody = createTurnBlock(turnIndex, running);
+      }
+      currentTurnBody.appendChild(renderFoldedEvent("tool", `Tool: ${payload.name || ""}`, JSON.stringify(payload.args || {}, null, 2)));
     } else if (event.kind === "tool_result") {
-      addChatBubble("tool", `Result: ${payload.name || ""}`, payload.output || "");
+      if (!currentTurnBody) {
+        turnIndex += 1;
+        currentTurnBody = createTurnBlock(turnIndex, running);
+      }
+      currentTurnBody.appendChild(renderFoldedEvent("tool", `Result: ${payload.name || ""}`, payload.output || ""));
     } else if (event.kind === "tool_error") {
-      addChatBubble("error", `Tool error: ${payload.name || ""}`, payload.error || "");
+      if (!currentTurnBody) {
+        turnIndex += 1;
+        currentTurnBody = createTurnBlock(turnIndex, running);
+      }
+      currentTurnBody.appendChild(renderFoldedEvent("error", `Tool error: ${payload.name || ""}`, payload.error || ""));
     } else if (event.kind === "final") {
       addChatBubble("assistant", "Assistant", payload.text || "");
+    } else if (event.kind === "reflection") {
+      const reflection = payload.reflection || {};
+      const lines = [];
+      if (reflection.summary) lines.push(reflection.summary);
+      if (reflection.lessons && reflection.lessons.length) {
+        lines.push("");
+        lines.push("Lessons:");
+        reflection.lessons.forEach((item) => lines.push(`- ${item}`));
+      }
+      if (reflection.next_steps && reflection.next_steps.length) {
+        lines.push("");
+        lines.push("Next:");
+        reflection.next_steps.forEach((item) => lines.push(`- ${item}`));
+      }
+      chatView.appendChild(renderFoldedEvent("assistant", "Reflection", lines.join("\n")));
+    } else if (event.kind === "report") {
+      const report = event.payload.report || {};
+      chatView.appendChild(renderFoldedEvent(
+        "tool",
+        "Report",
+        `status: ${report.status || ""}\nturns: ${report.turns || 0}\ntool calls: ${report.tool_calls || 0}\ntool failures: ${report.tool_failures || 0}\nduration: ${report.duration_ms || 0} ms`,
+      ));
     }
   });
-  if (running && !sawActiveTurn) {
-    const indicator = document.createElement("div");
-    indicator.className = "thinking-badge";
-    indicator.innerHTML = '<span class="thinking-spinner"></span><span>Thinking</span>';
-    chatView.appendChild(indicator);
+  if (running && turnIndex === 0) {
+    createTurnBlock(1, true);
   }
   chatView.scrollTop = chatView.scrollHeight;
 }
@@ -402,7 +663,7 @@ async function openSession(sessionId) {
     await chooseProject(data.project_root);
   }
   statusEl.textContent = data.status;
-  activeSessionLabel.textContent = `${data.task} · ${data.project_root}`;
+  activeSessionLabel.textContent = `${data.title || data.task.slice(0, 40)} · ${data.project_root}`;
   setRunning(data.status === "running");
   renderChat(data.events.slice(), data.status);
   await loadSessions();
@@ -445,7 +706,13 @@ async function loadBrowse(path) {
     up.type = "button";
     up.className = "browse-item dir";
     up.textContent = "..";
-    up.addEventListener("click", () => loadBrowse(data.parent));
+    up.addEventListener("click", async () => {
+      try {
+        await loadBrowse(data.parent);
+      } catch (err) {
+        browsePathLabel.textContent = err.message || String(err);
+      }
+    });
     browseList.appendChild(up);
   }
 
@@ -454,9 +721,13 @@ async function loadBrowse(path) {
     item.type = "button";
     item.className = `browse-item ${entry.kind}`;
     item.textContent = entry.kind === "dir" ? `▸ ${entry.name}` : entry.name;
-    item.addEventListener("click", () => {
+    item.addEventListener("click", async () => {
       if (entry.kind === "dir") {
-        loadBrowse(entry.path);
+        try {
+          await loadBrowse(entry.path);
+        } catch (err) {
+          browsePathLabel.textContent = err.message || String(err);
+        }
       } else {
         browsePathInput.value = entry.path;
         browsePathLabel.textContent = entry.path;
@@ -544,6 +815,13 @@ refreshTreeBtn.addEventListener("click", async () => {
   await loadSessions();
 });
 
+if (refreshTreeSidebarBtn) {
+  refreshTreeSidebarBtn.addEventListener("click", async () => {
+    await loadProject();
+    await loadTree();
+  });
+}
+
 openProjectBtn.addEventListener("click", openProjectModal);
 closeProjectModalBtn.addEventListener("click", () => setProjectModal(false));
 browseUpBtn.addEventListener("click", async () => {
@@ -560,7 +838,53 @@ browseGoBtn.addEventListener("click", async () => {
   const path = browsePathInput.value.trim();
   if (!path) return;
   try {
-    await loadBrowse(path);
+    if (pathModalMode === "project") {
+      await chooseProject(path);
+      setProjectModal(false);
+      return;
+    }
+    const name = pathModalName.value.trim();
+    const joinPath = (base, child) => `${base.replace(/\/$/, "")}/${child}`.replace(/\/+/g, "/");
+    if (pathModalMode === "new-file") {
+      if (!name) return;
+      const target = joinPath(path || currentProjectRoot || "", name);
+      await apiJson("/api/file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: target, content: "" }),
+      });
+      await openFile(target);
+      setProjectModal(false);
+      await loadTree();
+      return;
+    }
+    if (pathModalMode === "new-folder") {
+      if (!name) return;
+      const target = joinPath(path || currentProjectRoot || "", name);
+      await apiJson("/api/folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: target }),
+      });
+      setProjectModal(false);
+      await loadTree();
+      return;
+    }
+    if (pathModalMode === "save-as") {
+      if (!name) return;
+      const target = joinPath(path || currentProjectRoot || "", name);
+      await apiJson("/api/file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: target, content: editor.getValue() }),
+      });
+      filePathInput.value = target;
+      selectedFile = target;
+      setProjectModal(false);
+      await loadTree();
+    } else {
+      await loadBrowse(path);
+    }
   } catch (err) {
     browsePathLabel.textContent = err.message || String(err);
   }
@@ -578,14 +902,23 @@ browsePathInput.addEventListener("keydown", async (ev) => {
     browsePathLabel.textContent = err.message || String(err);
   }
 });
-useProjectBtn.addEventListener("click", async () => {
-  const path = browsePathInput.value.trim();
-  if (!path) return;
-  await chooseProject(path);
-  setProjectModal(false);
+newFileBtn.addEventListener("click", async () => {
+  await openPathDialog("new-file");
+});
+newFolderBtn.addEventListener("click", async () => {
+  await openPathDialog("new-folder");
 });
 conversationToggle.addEventListener("click", () => {
   conversationMenu.classList.toggle("hidden");
+});
+sessionPanel.addEventListener("click", (ev) => {
+  if (conversationMenu.classList.contains("hidden")) {
+    return;
+  }
+  if (conversationToggle.contains(ev.target) || conversationMenu.contains(ev.target)) {
+    return;
+  }
+  setConversationMenu(false);
 });
 newChatBtn.addEventListener("click", async () => {
   currentSession = null;
@@ -635,6 +968,7 @@ function escapeHtml(str) {
 }
 
 initEditor();
+initResizablePanels();
 setRunning(false);
 loadAuthStatus().catch((err) => {
   console.error(err);

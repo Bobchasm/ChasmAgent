@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import shutil
 from pathlib import Path
 
 from ..utils import ensure_within_root, truncate_text
@@ -24,6 +25,25 @@ def write_file(root: Path, path: str, content: str) -> str:
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(content, encoding="utf-8")
     return f"wrote {file_path.relative_to(root)} ({len(content)} chars)"
+
+
+def make_directory(root: Path, path: str) -> str:
+    dir_path = ensure_within_root(root, path)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return f"created directory {dir_path.relative_to(root)}"
+
+
+def delete_path(root: Path, path: str) -> str:
+    target = ensure_within_root(root, path)
+    if target == root:
+        raise ValueError("refusing to delete workspace root")
+    if not target.exists():
+        raise FileNotFoundError(path)
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    return f"deleted {target.relative_to(root)}"
 
 
 def replace_text(root: Path, path: str, old: str, new: str, count: int = 1) -> str:

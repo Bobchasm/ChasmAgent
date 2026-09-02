@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .filesystem import list_files, read_file, replace_text, search_text, write_file
+from .filesystem import delete_path, list_files, make_directory, read_file, replace_text, search_text, write_file
 from .shell import run_command
 
 
@@ -47,6 +47,36 @@ class ToolRegistry:
                             "content": _string_param("Full file content."),
                         },
                         "required": ["path", "content"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "make_directory",
+                    "description": "Create a directory inside the workspace.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": _string_param("Relative path inside the workspace."),
+                        },
+                        "required": ["path"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "delete_path",
+                    "description": "Delete a file or directory inside the workspace.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": _string_param("Relative path inside the workspace."),
+                        },
+                        "required": ["path"],
                         "additionalProperties": False,
                     },
                 },
@@ -127,6 +157,10 @@ class ToolRegistry:
             return read_file(self.workspace_root, **args)
         if name == "write_file":
             return write_file(self.workspace_root, **args)
+        if name == "make_directory":
+            return make_directory(self.workspace_root, **args)
+        if name == "delete_path":
+            return delete_path(self.workspace_root, **args)
         if name == "replace_text":
             return replace_text(self.workspace_root, **args)
         if name == "list_files":
@@ -136,4 +170,3 @@ class ToolRegistry:
         if name == "run_command":
             return run_command(self.workspace_root, **args)
         raise KeyError(name)
-

@@ -134,7 +134,13 @@ class LocalDatabase:
                     ON session_events(session_id, event_index);
                 """
             )
+            self._ensure_session_title_column()
             self._conn.commit()
+
+    def _ensure_session_title_column(self) -> None:
+        columns = {row["name"] for row in self._fetchall("PRAGMA table_info(sessions)")}
+        if "title" not in columns:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''")
 
     def _execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
         cur = self._conn.execute(sql, tuple(params))
@@ -305,15 +311,22 @@ class LocalDatabase:
             for row in rows
         ]
 
-    def create_session(self, user_id: int, task: str, project_root: str, mode: str = "auto") -> dict[str, Any]:
+    def create_session(
+        self,
+        user_id: int,
+        task: str,
+        project_root: str,
+        mode: str = "auto",
+        title: str = "",
+    ) -> dict[str, Any]:
         session_id = secrets.token_hex(6)
         now = utc_now()
         self._execute(
             """
-            INSERT INTO sessions (id, user_id, task, project_root, mode, status, created_at, updated_at, result)
-            VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, '')
+            INSERT INTO sessions (id, user_id, task, project_root, mode, status, created_at, updated_at, result, title)
+            VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, '', ?)
             """,
-            (session_id, user_id, task, project_root, mode, now, now),
+            (session_id, user_id, task, project_root, mode, now, now, title),
         )
         self.append_message(session_id, "user", task)
         return self.get_session(session_id) or {}
@@ -321,7 +334,7 @@ class LocalDatabase:
     def get_session(self, session_id: str) -> dict[str, Any] | None:
         row = self._fetchone(
             """
-            SELECT id, user_id, task, project_root, mode, status, created_at, updated_at, result
+            SELECT id, user_id, task, project_root, mode, status, created_at, updated_at, result, title
             FROM sessions
             WHERE id = ?
             """,
@@ -339,6 +352,7 @@ class LocalDatabase:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "result": row["result"],
+            "title": row["title"],
             "events": self.get_events(session_id),
             "messages": self.get_messages(session_id),
         }
@@ -346,7 +360,7 @@ class LocalDatabase:
     def list_sessions(self, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
         rows = self._fetchall(
             """
-            SELECT id, user_id, task, project_root, mode, status, created_at, updated_at, result
+            SELECT id, user_id, task, project_root, mode, status, created_at, updated_at, result, title
             FROM sessions
             WHERE user_id = ?
             ORDER BY updated_at DESC
@@ -360,7 +374,7 @@ class LocalDatabase:
         self._execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
 
     def update_session(self, session_id: str, **fields: Any) -> dict[str, Any]:
-        allowed = {"task", "project_root", "mode", "status", "result"}
+        allowed = {"task", "project_root", "mode", "status", "result", "title"}
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return self.get_session(session_id) or {}
@@ -461,8 +475,8 @@ class LocalDatabase:
             now = utc_now()
             self._execute(
                 """
-                INSERT INTO sessions (id, user_id, task, project_root, mode, status, created_at, updated_at, result)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO sessions (id, user_id, task, project_root, mode, status, created_at, updated_at, result, title)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -474,6 +488,7 @@ class LocalDatabase:
                     payload.get("created_at", now),
                     payload.get("updated_at", now),
                     payload.get("result", ""),
+                    payload.get("title", ""),
                 ),
             )
             for message in payload.get("messages", []) or []:

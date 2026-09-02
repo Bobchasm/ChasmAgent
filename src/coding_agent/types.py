@@ -26,3 +26,18 @@ class AgentRunResult:
     events: list[AgentEvent]
     workspace_root: Path
 
+
+@dataclass(slots=True)
+class PlanItem:
+    title: str
+    detail: str = ""
+
+
+@dataclass(slots=True)
+class RunReport:
+    status: str
+    turns: int
+    tool_calls: int
+    tool_failures: int
+    duration_ms: int
+    plan_steps: int = 0

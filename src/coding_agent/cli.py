@@ -10,8 +10,9 @@ from rich.console import Console
 from .agent import CodingAgent
 from .config import AgentSettings
 from .llm import LLMClient
-from .memory import MemoryStore
+from .memory import MemoryArchive, MemoryStore
 from .logging import setup_logging
+from .storage import LocalDatabase
 from .tools.registry import ToolRegistry
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -28,6 +29,7 @@ def run(
     setup_logging(settings.log_level)
     if not settings.api_key:
         raise typer.BadParameter("OPENAI_API_KEY is required")
+    db = LocalDatabase(settings.data_dir)
     agent = CodingAgent(
         llm=LLMClient(
             api_key=settings.api_key,
@@ -37,6 +39,10 @@ def run(
         ),
         tools=ToolRegistry(settings.workspace_root),
         memory=MemoryStore(settings.workspace_root),
+        archive=MemoryArchive(db),
+        user_id=1,
+        enable_planning=True,
+        enable_reflection=True,
         max_turns=settings.max_turns,
         max_history_messages=settings.max_history_messages,
         max_tool_output_chars=settings.max_tool_output_chars,
@@ -55,6 +61,7 @@ def chat(
     setup_logging(settings.log_level)
     if not settings.api_key:
         raise typer.BadParameter("OPENAI_API_KEY or DASHSCOPE_API_KEY is required")
+    db = LocalDatabase(settings.data_dir)
     agent = CodingAgent(
         llm=LLMClient(
             api_key=settings.api_key,
@@ -64,6 +71,10 @@ def chat(
         ),
         tools=ToolRegistry(settings.workspace_root),
         memory=MemoryStore(settings.workspace_root),
+        archive=MemoryArchive(db),
+        user_id=1,
+        enable_planning=True,
+        enable_reflection=True,
         max_turns=settings.max_turns,
         max_history_messages=settings.max_history_messages,
         max_tool_output_chars=settings.max_tool_output_chars,

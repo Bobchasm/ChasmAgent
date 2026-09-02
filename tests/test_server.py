@@ -49,6 +49,15 @@ def test_server_routes(tmp_path: Path):
     assert file_resp.json()["content"] == "hello"
     project_resp = client.post("/api/project", json={"path": str(tmp_path)})
     assert project_resp.status_code == 200
+    folder_resp = client.post("/api/folder", json={"path": "nested/dir"})
+    assert folder_resp.status_code == 200
+    assert (tmp_path / "nested/dir").is_dir()
+    delete_file = client.delete("/api/path", params={"path": "sample.txt"})
+    assert delete_file.status_code == 200
+    assert not (tmp_path / "sample.txt").exists()
+    delete_dir = client.delete("/api/path", params={"path": "nested"})
+    assert delete_dir.status_code == 200
+    assert not (tmp_path / "nested").exists()
     save_resp = client.post("/api/file", json={"path": "nested/new.txt", "content": "world"})
     assert save_resp.status_code == 200
     assert (tmp_path / "nested/new.txt").read_text(encoding="utf-8") == "world"

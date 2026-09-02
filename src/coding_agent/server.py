@@ -12,9 +12,9 @@ from .agent import CodingAgent
 from .config import AgentSettings
 from .llm import LLMClient
 from .logging import setup_logging
-from .memory import MemoryStore
+from .memory import MemoryArchive, MemoryStore
 from .session import SessionStore
-from .tools.filesystem import read_file, write_file
+from .tools.filesystem import delete_path, make_directory, read_file, write_file
 from .tools.registry import ToolRegistry
 from .utils import is_ignored_path
 
@@ -26,6 +26,21 @@ def _llm(settings: AgentSettings) -> LLMClient:
         model=settings.model,
         extra_body={"enable_thinking": True} if settings.enable_thinking else None,
     )
+
+
+def _session_title(task: str) -> str:
+    text = " ".join((task or "").split())
+    if not text:
+        return "New Chat"
+    for sep in ["。", ".", "！", "!", "？", "?", ";", "；", "\n", " ", "，", ",", "：", ":"]:
+        idx = text.find(sep)
+        if 8 <= idx <= 28:
+            text = text[:idx]
+            break
+    text = text.strip("，。！？!?;；:：")
+    if len(text) > 26:
+        text = text[:26].rstrip()
+    return text or "New Chat"
 
 
 def build_app(settings: AgentSettings | None = None) -> FastAPI:
@@ -88,6 +103,11 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             llm=_llm(settings),
             tools=ToolRegistry(project_root),
             memory=MemoryStore(project_root, namespace=session_id),
+            archive=MemoryArchive(db),
+            session_id=session_id,
+            user_id=session.user_id,
+            enable_planning=True,
+            enable_reflection=True,
             max_turns=settings.max_turns,
             max_history_messages=settings.max_history_messages,
             max_tool_output_chars=settings.max_tool_output_chars,
@@ -253,6 +273,32 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"message": message}
 
+    @app.post("/api/folder")
+    def create_folder(request: Request, payload: dict[str, str]):
+        _require_user(request)
+        path = (payload.get("path") or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        try:
+            message = make_directory(get_project_root(), path)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"message": message}
+
+    @app.delete("/api/path")
+    def delete_workspace_path(request: Request, path: str):
+        _require_user(request)
+        target = path.strip()
+        if not target:
+            raise HTTPException(status_code=400, detail="path is required")
+        try:
+            message = delete_path(get_project_root(), target)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="path not found")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"message": message}
+
     @app.post("/api/sessions")
     def create_session(request: Request, payload: dict[str, str], background_tasks: BackgroundTasks):
         user = _require_user(request)
@@ -263,6 +309,7 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         project_root_value = (payload.get("project_root") or "").strip()
         project_root = Path(project_root_value) if project_root_value else get_project_root()
         record = store.create(task, str(project_root), mode, user_id=user.id)
+        store.update(record.id, title=_session_title(task))
         background_tasks.add_task(run_session, record.id)
         return {"session_id": record.id}
 

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .storage import LocalDatabase
 from .types import AgentEvent
 
 
@@ -74,7 +75,7 @@ class MemoryStore:
             name = event.payload.get("name")
             args = event.payload.get("args") or {}
             path = args.get("path")
-            if name in {"read_file", "write_file", "replace_text", "search_text", "list_files"} and path:
+            if name in {"read_file", "write_file", "replace_text", "search_text", "list_files", "delete_path"} and path:
                 touched.add(str(path))
         record.touched_files = sorted(touched)
         record.updated_at = _utc_now()
@@ -95,3 +96,49 @@ class MemoryStore:
             parts.append("Recent tasks:")
             parts.extend(f"- {item}" for item in record.recent_tasks[-5:])
         return "\n".join(parts).strip()
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
+        if len(token) > 2
+    }
+
+
+class MemoryArchive:
+    def __init__(self, db: LocalDatabase) -> None:
+        self.db = db
+
+    def render(
+        self,
+        query: str,
+        user_id: int,
+        project_root: str,
+        limit: int = 4,
+        exclude_session_id: str | None = None,
+    ) -> str:
+        query_tokens = _tokens(query)
+        candidates = []
+        for item in self.db.list_sessions(user_id=user_id, limit=40):
+            if exclude_session_id and item.get("id") == exclude_session_id:
+                continue
+            if item.get("project_root") != project_root:
+                continue
+            blob = " ".join(
+                [
+                    str(item.get("task", "")),
+                    str(item.get("result", "")),
+                    str(item.get("status", "")),
+                ]
+            )
+            score = len(query_tokens & _tokens(blob))
+            if score > 0:
+                candidates.append((score, item))
+        candidates.sort(key=lambda pair: (pair[0], pair[1].get("updated_at", "")), reverse=True)
+        lines: list[str] = []
+        for _, item in candidates[:limit]:
+            lines.append(
+                f"- {item.get('task', '')[:80]} | {item.get('status', '')} | {str(item.get('result', ''))[:160]}"
+            )
+        return "\n".join(lines).strip()
