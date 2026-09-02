@@ -1,20 +1,25 @@
-仓库地址：git@github.com:Bobchasm/ChasmAgent.git
+# Chasm Agent
 
-运行方式：
-1. 安装 Miniconda 后执行 `bash scripts/bootstrap.sh`
-2. `conda activate coding-agent`
-3. 复制 `.env.example` 为 `.env`，填写 `OPENAI_API_KEY` 或 `DASHSCOPE_API_KEY`
-4. 启动 Web 端：`chasm-agent serve --reload`
-5. 命令行单次任务：`chasm-agent run "你的编程任务"`
-6. 交互式终端：`chasm-agent chat`
-7. Web 端顶部可以直接输入本机项目路径并切换工作区
+仓库地址：[https://github.com/Bobchasm/ChasmAgent.git](https://github.com/Bobchasm/ChasmAgent.git)
 
-环境变量：
-DashScope 推荐：`CHASM_PROVIDER=dashscope`、`DASHSCOPE_API_KEY`、`OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`、`OPENAI_MODEL=qwen3.8-flash`
-可选：`CHASM_ENABLE_THINKING=1`、`CHASM_WORKSPACE`、`CHASM_LOG_LEVEL`、`CHASM_MAX_TURNS`
-也兼容 `OPENAI_API_KEY` + OpenAI/OpenAI-compatible 网关。
+## 快速运行
+1. 安装 Miniconda。
+2. 进入项目根目录，执行 `bash scripts/bootstrap.sh`。
+3. 激活环境：`conda activate coding-agent`。
 
-特色：
-本项目不依赖现成 agent 框架，核心逻辑包括本地工具执行、上下文管理、循环终止、错误处理、日志、记忆、会话历史和 Web 界面。
-支持读文件、写文件、文本替换、目录浏览、文本搜索、命令执行。
-Web 界面提供任务输入、会话状态、会话历史、workspace 视图、文件编辑和结果流，深色主题，布局接近轻量 IDE。
+## 模型配置
+1. 复制 `.env.example` 为 `.env`。
+2. 在环境变量中填写 `OPENAI_API_KEY` 或 `DASHSCOPE_API_KEY`。
+3. 如使用 DashScope 兼容接口，设置 `CHASM_PROVIDER=dashscope`，`OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`。
+
+## 启动方式
+1. 启动 Web 端：`chasm-agent serve --reload --host 0.0.0.0 --port 8000`，浏览器访问 [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+2. 运行单次任务：`chasm-agent run "你的编程任务"`
+3. 打开交互终端：`chasm-agent chat`
+
+## 功能说明
+1. 本地 coding agent 工作流：`plan -> reason -> tool -> observe -> done`
+2. 文件读写、文本替换、目录浏览、文本搜索、命令执行
+3. SQLite 持久化的用户、会话、消息、事件和记忆
+4. Web IDE 界面、文件树、代码编辑器和 Markdown 对话渲染
+5. OpenAI 兼容接口和 DashScope 兼容接口

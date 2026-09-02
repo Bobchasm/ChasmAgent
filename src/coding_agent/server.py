@@ -237,12 +237,15 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         items = []
         root = get_project_root()
         for path in sorted(root.rglob("*")):
-            if path.is_dir():
-                continue
             if is_ignored_path(path):
                 continue
-            items.append(str(path.relative_to(root)))
-        return {"root": str(root), "files": items[:800]}
+            items.append(
+                {
+                    "path": str(path.relative_to(root)),
+                    "kind": "dir" if path.is_dir() else "file",
+                }
+            )
+        return {"root": str(root), "entries": items[:800], "files": [item["path"] for item in items if item["kind"] == "file"][:800]}
 
     @app.get("/api/sessions")
     def list_sessions(request: Request, limit: int = 20):

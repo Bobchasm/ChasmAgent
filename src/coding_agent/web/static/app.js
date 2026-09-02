@@ -303,15 +303,23 @@ async function submitAuth(endpoint, payload) {
   await loadSessions();
 }
 
-function buildTree(files) {
+function buildTree(entries) {
   const root = { dirs: new Map(), files: [] };
-  for (const file of files) {
-    const parts = file.split("/").filter(Boolean);
+  for (const entry of entries) {
+    const path = typeof entry === "string" ? entry : entry.path;
+    const kind = typeof entry === "string" ? "file" : entry.kind || "file";
+    const parts = path.split("/").filter(Boolean);
     let node = root;
     for (let i = 0; i < parts.length; i += 1) {
       const part = parts[i];
       if (i === parts.length - 1) {
-        node.files.push(part);
+        if (kind === "dir") {
+          if (!node.dirs.has(part)) {
+            node.dirs.set(part, { dirs: new Map(), files: [] });
+          }
+        } else {
+          node.files.push(part);
+        }
       } else {
         if (!node.dirs.has(part)) {
           node.dirs.set(part, { dirs: new Map(), files: [] });
@@ -430,11 +438,12 @@ function renderTreeNode(node, container, prefix = "") {
 async function loadTree() {
   const data = await apiJson("/api/tree");
   treeList.innerHTML = "";
-  if (!data.files.length) {
+  const entries = data.entries || (data.files || []).map((path) => ({ path, kind: "file" }));
+  if (!entries.length) {
     treeList.textContent = "(empty)";
     return;
   }
-  const root = buildTree(data.files);
+  const root = buildTree(entries);
   renderTreeNode(root, treeList);
 }
 

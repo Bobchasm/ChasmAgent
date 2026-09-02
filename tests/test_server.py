@@ -52,6 +52,9 @@ def test_server_routes(tmp_path: Path):
     folder_resp = client.post("/api/folder", json={"path": "nested/dir"})
     assert folder_resp.status_code == 200
     assert (tmp_path / "nested/dir").is_dir()
+    tree_after_folder = client.get("/api/tree").json()
+    assert any(item["path"] == "nested" and item["kind"] == "dir" for item in tree_after_folder["entries"])
+    assert any(item["path"] == "nested/dir" and item["kind"] == "dir" for item in tree_after_folder["entries"])
     delete_file = client.delete("/api/path", params={"path": "sample.txt"})
     assert delete_file.status_code == 200
     assert not (tmp_path / "sample.txt").exists()
