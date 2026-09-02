@@ -21,6 +21,7 @@ Chasm Agent 是一个本地可运行的 agent IDE，重点在于打通一条完�
 - 文件和目录创建、删除
 - agent 多轮工具调用
 - 会话隔离和持久化
+- 持久化记忆，记录 summary、preferences、decisions、open tasks 和 touched files
 - 本地账号登录
 - Markdown 渲染的对话展示
 - Thinking / Tool / Report 折叠展示
@@ -42,6 +43,8 @@ conda env create -f environment.yml
 conda activate coding-agent
 pip install -e .
 ```
+
+默认每次指令最多 50 轮，无进展保护默认 8 轮，可通过 `CHASM_MAX_TURNS` 和 `CHASM_MAX_NO_PROGRESS_TURNS` 调整。
 
 ### 2.2 模型配置
 

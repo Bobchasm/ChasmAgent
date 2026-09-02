@@ -52,3 +52,10 @@ def test_agent_handles_tool_and_termination(tmp_path: Path):
     result = agent.run("read the file")
     assert isinstance(result.final_message, str)
     assert "Terminated" in result.final_message or result.final_message.strip() != ""
+
+
+def test_agent_default_max_turns_is_higher():
+    tools = ToolRegistry(Path("."))
+    llm = DummyLLM([{"content": "done"}])
+    agent = CodingAgent(llm=llm, tools=tools)
+    assert agent.max_turns >= 50

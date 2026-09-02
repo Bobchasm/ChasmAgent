@@ -59,6 +59,40 @@ def _session_title(task: str) -> str:
     return text or "New Chat"
 
 
+def _session_title_prompt(task: str, final_message: str) -> str:
+    return (
+        "You write short titles for a coding agent session.\n"
+        "Return only JSON with key title.\n"
+        "Title rules: 2 to 18 Chinese characters or 2 to 6 English words, no quotes, no punctuation.\n"
+        "Use the latest user request and the final result.\n"
+        f"User request:\n{task}\n\nFinal result:\n{final_message}"
+    )
+
+
+def _generate_session_title(llm: LLMClient, task: str, final_message: str) -> str:
+    try:
+        response = llm.complete(
+            [{"role": "system", "content": _session_title_prompt(task, final_message)}],
+            [],
+            temperature=0.0,
+        )
+        content = response.choices[0].message.content or ""
+        title = content.strip()
+        if title.startswith("```"):
+            title = title.strip("`").strip()
+        if title.startswith("{"):
+            payload = json.loads(title)
+            if isinstance(payload, dict):
+                title = str(payload.get("title", "")).strip()
+        title = title.strip("\"'“”")
+        title = re.sub(r"\s+", " ", title).strip()
+        if len(title) > 18:
+            title = title[:18].rstrip()
+        return title or _session_title(task)
+    except Exception:
+        return _session_title(task)
+
+
 def build_app(settings: AgentSettings | None = None) -> FastAPI:
     settings = settings or AgentSettings.from_env()
     setup_logging(settings.log_level)
@@ -114,6 +148,17 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             return
         store.update(session_id, status="running")
         project_root = Path(session.project_root or get_project_root())
+        current_task = session.task
+        conversation_messages = session.messages
+        if session.messages:
+            last_user = next(
+                (str(message.get("content", "")).strip() for message in reversed(session.messages) if message.get("role") == "user" and str(message.get("content", "")).strip()),
+                "",
+            )
+            if last_user:
+                current_task = last_user
+                if session.messages and str(session.messages[-1].get("content", "")).strip() == last_user:
+                    conversation_messages = session.messages[:-1]
         cancel_event = cancel_events.setdefault(session_id, threading.Event())
         agent = CodingAgent(
             llm=_llm(settings),
@@ -125,6 +170,7 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             enable_planning=True,
             enable_reflection=True,
             max_turns=settings.max_turns,
+            max_no_progress_turns=settings.max_no_progress_turns,
             max_history_messages=settings.max_history_messages,
             max_tool_output_chars=settings.max_tool_output_chars,
             mode=session.mode,
@@ -132,11 +178,14 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             should_stop=cancel_event.is_set,
         )
         try:
-            result = agent.run(session.task, conversation_messages=session.messages)
+            result = agent.run(current_task, conversation_messages=conversation_messages)
             final_message = "Terminated: stopped by user." if cancel_event.is_set() else result.final_message
             status = "stopped" if cancel_event.is_set() else "done"
             store.append_message(session_id, "assistant", final_message)
             store.update(session_id, result=final_message, status=status)
+            if not (session.title or "").strip():
+                title = _generate_session_title(agent.llm, current_task, final_message)
+                store.update(session_id, title=title)
         except Exception as exc:  # noqa: BLE001
             store.update(session_id, result=f"{type(exc).__name__}: {exc}", status="error")
         finally:
@@ -328,7 +377,6 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         project_root_value = (payload.get("project_root") or "").strip()
         project_root = Path(project_root_value) if project_root_value else get_project_root()
         record = store.create(task, str(project_root), mode, user_id=user.id)
-        store.update(record.id, title=_session_title(task))
         background_tasks.add_task(run_session, record.id)
         return {"session_id": record.id}
 
@@ -344,11 +392,23 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         if record.status == "running":
             raise HTTPException(status_code=409, detail="session is running")
         store.append_message(session_id, "user", content)
-        title = record.title or _session_title(record.task or content)
-        if not record.title:
-            store.update(session_id, title=title)
+        store.update(session_id, task=content, status="queued")
         background_tasks.add_task(run_session, session_id)
         return {"session_id": session_id}
+
+    @app.patch("/api/sessions/{session_id}")
+    def update_session_metadata(request: Request, session_id: str, payload: dict[str, str]):
+        user = _require_user(request)
+        record = store.get(session_id)
+        if record is None or record.user_id != user.id:
+            raise HTTPException(status_code=404, detail="session not found")
+        title = (payload.get("title") or "").strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title is required")
+        if len(title) > 40:
+            title = title[:40].rstrip()
+        updated = store.update(session_id, title=title)
+        return updated.to_dict()
 
     @app.get("/api/sessions/{session_id}")
     def get_session(request: Request, session_id: str):

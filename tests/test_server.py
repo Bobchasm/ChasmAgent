@@ -113,6 +113,7 @@ def test_session_can_append_message(tmp_path: Path, monkeypatch):
     updated = client.get(f"/api/sessions/{session_id}").json()
     assert len(updated["messages"]) > first_len
     assert any(message["role"] == "user" and message["content"] == "update the code" for message in updated["messages"])
+    assert updated["task"] == "update the code"
 
 
 def test_session_title_is_short(tmp_path: Path, monkeypatch):
@@ -140,3 +141,49 @@ def test_session_title_is_short(tmp_path: Path, monkeypatch):
     record = client.get(f"/api/sessions/{session_id}").json()
     assert record["title"]
     assert len(record["title"]) <= 18
+
+
+def test_session_title_can_be_renamed(tmp_path: Path, monkeypatch):
+    from coding_agent import server as server_module
+
+    monkeypatch.setattr(server_module, "_llm", lambda settings: DummyLLM())
+    settings = AgentSettings(
+        workspace_root=tmp_path,
+        data_dir=tmp_path / ".data",
+        model="test-model",
+        base_url="http://localhost/v1",
+        api_key="test-key",
+    )
+    client = TestClient(build_app(settings))
+    client.post("/api/auth/bootstrap")
+    resp = client.post(
+        "/api/sessions",
+        json={"task": "write a sorter", "mode": "auto", "project_root": str(tmp_path)},
+    )
+    session_id = resp.json()["session_id"]
+    renamed = client.patch(f"/api/sessions/{session_id}", json={"title": "My Sorter"})
+    assert renamed.status_code == 200
+    record = client.get(f"/api/sessions/{session_id}").json()
+    assert record["title"] == "My Sorter"
+
+
+def test_session_title_is_generated_once(tmp_path: Path, monkeypatch):
+    from coding_agent import server as server_module
+
+    monkeypatch.setattr(server_module, "_llm", lambda settings: DummyLLM())
+    settings = AgentSettings(
+        workspace_root=tmp_path,
+        data_dir=tmp_path / ".data",
+        model="test-model",
+        base_url="http://localhost/v1",
+        api_key="test-key",
+    )
+    client = TestClient(build_app(settings))
+    client.post("/api/auth/bootstrap")
+    create = client.post("/api/sessions", json={"task": "write a sorter", "mode": "auto", "project_root": str(tmp_path)})
+    session_id = create.json()["session_id"]
+    first = client.get(f"/api/sessions/{session_id}").json()["title"]
+    assert first
+    client.post(f"/api/sessions/{session_id}/message", json={"content": "improve the sorter"})
+    second = client.get(f"/api/sessions/{session_id}").json()["title"]
+    assert second == first

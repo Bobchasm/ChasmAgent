@@ -31,7 +31,8 @@ class CodingAgent:
     user_id: int = 1
     enable_planning: bool = False
     enable_reflection: bool = False
-    max_turns: int = 12
+    max_turns: int = 50
+    max_no_progress_turns: int = 8
     max_history_messages: int = 18
     max_tool_output_chars: int = 12_000
     mode: str = "auto"
@@ -350,7 +351,7 @@ class CodingAgent:
                 )
                 return AgentRunResult(task=task, final_message=final, events=self.events, workspace_root=self.tools.workspace_root)
 
-            if no_progress_turns >= 4:
+            if no_progress_turns >= self.max_no_progress_turns:
                 final = "Terminated: no progress detected across multiple turns."
                 self._emit("final", text=final)
                 if self.memory:

@@ -489,12 +489,48 @@ function renderConversationList(sessions) {
     item.className = "conversation-item" + (session.id === currentSession ? " active" : "");
     const title = session.title || sessionTitle(session.task);
     item.title = session.task;
-    item.innerHTML = `<div class="conversation-main"><div>${escapeHtml(title)}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div></div><button type="button" class="conversation-delete" title="Delete conversation">×</button>`;
+    const main = document.createElement("div");
+    main.className = "conversation-main";
+    const titleEl = document.createElement("div");
+    titleEl.className = "conversation-title";
+    titleEl.textContent = title;
+    titleEl.title = "Rename conversation";
+    titleEl.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const next = prompt("Conversation title", session.title || title);
+      if (!next) {
+        return;
+      }
+      try {
+        const updated = await apiJson(`/api/sessions/${session.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: next }),
+        });
+        if (currentSession === session.id) {
+          activeSessionLabel.textContent = `${updated.title || next} · ${updated.project_root}`;
+        }
+        await loadSessions();
+      } catch (err) {
+        alert(err.message || String(err));
+      }
+    });
+    const meta = document.createElement("div");
+    meta.className = "session-meta";
+    meta.textContent = `${session.project_root || ""} · ${session.status} · ${session.updated_at}`;
+    main.appendChild(titleEl);
+    main.appendChild(meta);
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "conversation-delete";
+    deleteBtn.title = "Delete conversation";
+    deleteBtn.textContent = "×";
+    main.appendChild(deleteBtn);
+    item.appendChild(main);
     item.addEventListener("click", () => {
       setConversationMenu(false);
       openSession(session.id);
     });
-    const deleteBtn = item.querySelector(".conversation-delete");
     deleteBtn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       if (!confirm("Delete this conversation?")) {
@@ -624,6 +660,8 @@ function renderChat(events, status = "") {
   events.forEach((event) => {
     const payload = event.payload || {};
     if (event.kind === "task") {
+      turnIndex = 0;
+      currentTurnBody = null;
       addChatBubble("user", "You", payload.task || "");
     } else if (event.kind === "plan") {
       chatView.appendChild(renderFoldedEvent("plan", "Plan", payload.text || "", false));
@@ -999,6 +1037,7 @@ stopBtn.addEventListener("click", async () => {
     }
     statusEl.textContent = "stopped";
     setRunning(false);
+    taskEl.value = "";
     const data = await apiJson(`/api/sessions/${currentSession}`);
     renderChat(data.events.slice(), "stopped");
     await loadSessions();
