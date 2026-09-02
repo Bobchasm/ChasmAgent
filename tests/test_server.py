@@ -88,3 +88,55 @@ def test_session_roundtrip(tmp_path: Path, monkeypatch):
     assert record["project_root"] == str(tmp_path)
     assert client.delete(f"/api/sessions/{session_id}").status_code == 200
     assert client.get(f"/api/sessions/{session_id}").status_code == 404
+
+
+def test_session_can_append_message(tmp_path: Path, monkeypatch):
+    from coding_agent import server as server_module
+
+    monkeypatch.setattr(server_module, "_llm", lambda settings: DummyLLM())
+    settings = AgentSettings(
+        workspace_root=tmp_path,
+        data_dir=tmp_path / ".data",
+        model="test-model",
+        base_url="http://localhost/v1",
+        api_key="test-key",
+    )
+    client = TestClient(build_app(settings))
+    client.post("/api/auth/bootstrap")
+    create = client.post("/api/sessions", json={"task": "say hi", "mode": "auto", "project_root": str(tmp_path)})
+    session_id = create.json()["session_id"]
+    first = client.get(f"/api/sessions/{session_id}").json()
+    assert any(message["role"] == "user" and message["content"] == "say hi" for message in first["messages"])
+    first_len = len(first["messages"])
+    reply = client.post(f"/api/sessions/{session_id}/message", json={"content": "update the code"})
+    assert reply.status_code == 200
+    updated = client.get(f"/api/sessions/{session_id}").json()
+    assert len(updated["messages"]) > first_len
+    assert any(message["role"] == "user" and message["content"] == "update the code" for message in updated["messages"])
+
+
+def test_session_title_is_short(tmp_path: Path, monkeypatch):
+    from coding_agent import server as server_module
+
+    monkeypatch.setattr(server_module, "_llm", lambda settings: DummyLLM())
+    settings = AgentSettings(
+        workspace_root=tmp_path,
+        data_dir=tmp_path / ".data",
+        model="test-model",
+        base_url="http://localhost/v1",
+        api_key="test-key",
+    )
+    client = TestClient(build_app(settings))
+    client.post("/api/auth/bootstrap")
+    resp = client.post(
+        "/api/sessions",
+        json={
+            "task": "你好，请你编写一套使用cpp语言的数组排序程序，请遵循我给你的项目结构和命名规范，路径是/home/bobchasm/test",
+            "mode": "auto",
+            "project_root": str(tmp_path),
+        },
+    )
+    session_id = resp.json()["session_id"]
+    record = client.get(f"/api/sessions/{session_id}").json()
+    assert record["title"]
+    assert len(record["title"]) <= 18

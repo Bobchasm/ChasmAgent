@@ -11,9 +11,19 @@ def test_memory_persists(tmp_path: Path):
         "add a feature",
         "done",
         [AgentEvent(kind="tool_call", payload={"name": "write_file", "args": {"path": "a.txt"}})],
+        reflection={
+            "summary": "finished the change",
+            "lessons": ["keep edits small"],
+            "next_steps": ["add tests"],
+            "files": ["a.txt"],
+            "decisions": ["use the same session"],
+            "preferences": ["prefer concise edits"],
+        },
     )
     rendered = memory.render()
-    assert "done" in rendered
+    assert "finished the change" in rendered
     assert "a.txt" in rendered
+    assert "keep edits small" in rendered
+    assert "add tests" in rendered
+    assert "prefer concise edits" in rendered
     assert memory.path.exists()
-

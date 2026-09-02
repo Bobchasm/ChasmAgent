@@ -154,11 +154,20 @@ class CodingAgent:
             reflection = {"summary": final_message[:240], "status": report.status}
         return reflection
 
-    def _build_state(self, task: str, plan_text: str, retrieval_text: str) -> ConversationState:
+    def _build_state(
+        self,
+        task: str,
+        plan_text: str,
+        retrieval_text: str,
+        conversation_messages: list[dict[str, Any]] | None = None,
+    ) -> ConversationState:
         state = ConversationState()
         memory_text = self.memory.render() if self.memory else ""
         state.append({"role": "system", "content": system_prompt(memory_text, retrieval_text, plan_text)})
-        state.append({"role": "user", "content": task})
+        for message in conversation_messages or []:
+            state.append(dict(message))
+        if not conversation_messages:
+            state.append({"role": "user", "content": task})
         return state
 
     def _append_tool_result(self, state: ConversationState, call_id: str, output: str) -> None:
@@ -193,7 +202,7 @@ class CodingAgent:
 
         return ok, output
 
-    def run(self, task: str) -> AgentRunResult:
+    def run(self, task: str, conversation_messages: list[dict[str, Any]] | None = None) -> AgentRunResult:
         self.events = []
         started_at = time.monotonic()
         consecutive_tool_failures = 0
@@ -213,7 +222,7 @@ class CodingAgent:
         plan = self._plan_task(task, retrieval_text)
         plan_text = self._format_plan(plan)
         self._emit("plan", plan=plan, text=plan_text)
-        state = self._build_state(task, plan_text, retrieval_text)
+        state = self._build_state(task, plan_text, retrieval_text, conversation_messages=conversation_messages)
 
         for turn in range(1, self.max_turns + 1):
             if self.should_stop and self.should_stop():
@@ -277,8 +286,6 @@ class CodingAgent:
             if not tool_calls:
                 final = message.content or ""
                 self._emit("final", text=final)
-                if self.memory:
-                    self.memory.update_from_run(task, final, self.events)
                 reflection = self._reflect(
                     task,
                     final,
@@ -292,6 +299,8 @@ class CodingAgent:
                         plan_steps=len(plan.get("steps") or []),
                     ),
                 )
+                if self.memory:
+                    self.memory.update_from_run(task, final, self.events, reflection=reflection)
                 self._emit("reflection", reflection=reflection)
                 self._emit(
                     "report",

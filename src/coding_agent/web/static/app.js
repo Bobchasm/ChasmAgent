@@ -199,6 +199,41 @@ function languageModeFor(path) {
   return "ace/mode/text";
 }
 
+function sessionTitle(task) {
+  let text = String(task || "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "New Chat";
+  }
+  text = text.replace(/^https?:\/\/\S+\s*/g, "");
+  text = text.replace(/^[/\\][^\s，。！？!?;；:：]+/g, "");
+  const prefixes = [
+    /^你好[，,]?\s*/,
+    /^请你[，,]?\s*/,
+    /^请帮我[，,]?\s*/,
+    /^帮我[，,]?\s*/,
+    /^麻烦你[，,]?\s*/,
+    /^能不能[，,]?\s*/,
+    /^希望你[，,]?\s*/,
+    /^现在[，,]?\s*/,
+    /^然后[，,]?\s*/,
+  ];
+  for (const pattern of prefixes) {
+    text = text.replace(pattern, "");
+  }
+  text = text.replace(/[，。！？!?;；:：]+$/, "").trim();
+  for (const sep of ["。", ".", "！", "!", "？", "?", ";", "；", "\n", "，", ",", "：", ":"]) {
+    const idx = text.indexOf(sep);
+    if (idx >= 6 && idx <= 22) {
+      text = text.slice(0, idx);
+      break;
+    }
+  }
+  if (text.length > 18) {
+    text = text.slice(0, 18).trim();
+  }
+  return text || "New Chat";
+}
+
 function setProjectModal(open) {
   projectModal.classList.toggle("hidden", !open);
 }
@@ -452,7 +487,7 @@ function renderConversationList(sessions) {
   sessions.forEach((session) => {
     const item = document.createElement("div");
     item.className = "conversation-item" + (session.id === currentSession ? " active" : "");
-    const title = session.title || session.task.slice(0, 40);
+    const title = session.title || sessionTitle(session.task);
     item.title = session.task;
     item.innerHTML = `<div class="conversation-main"><div>${escapeHtml(title)}</div><div class="session-meta">${escapeHtml(session.project_root || "")} · ${session.status} · ${session.updated_at}</div></div><button type="button" class="conversation-delete" title="Delete conversation">×</button>`;
     item.addEventListener("click", () => {
@@ -672,7 +707,7 @@ async function openSession(sessionId) {
     await chooseProject(data.project_root);
   }
   statusEl.textContent = data.status;
-  activeSessionLabel.textContent = `${data.title || data.task.slice(0, 40)} · ${data.project_root}`;
+  activeSessionLabel.textContent = `${data.title || sessionTitle(data.task)} · ${data.project_root}`;
   setRunning(data.status === "running");
   renderChat(data.events.slice(), data.status);
   await loadSessions();
@@ -754,6 +789,16 @@ sendBtn.addEventListener("click", async () => {
   }
   try {
     setRunning(true);
+    if (currentSession) {
+      await apiJson(`/api/sessions/${currentSession}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: task }),
+      });
+      taskEl.value = "";
+      await openSession(currentSession);
+      return;
+    }
     const data = await apiJson("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -18,6 +18,9 @@ def _utc_now() -> str:
 class MemoryRecord:
     summary: str = ""
     facts: list[str] = field(default_factory=list)
+    preferences: list[str] = field(default_factory=list)
+    decisions: list[str] = field(default_factory=list)
+    open_tasks: list[str] = field(default_factory=list)
     recent_tasks: list[str] = field(default_factory=list)
     touched_files: list[str] = field(default_factory=list)
     updated_at: str = ""
@@ -39,6 +42,9 @@ class MemoryStore:
         return MemoryRecord(
             summary=data.get("summary", ""),
             facts=list(data.get("facts", [])),
+            preferences=list(data.get("preferences", [])),
+            decisions=list(data.get("decisions", [])),
+            open_tasks=list(data.get("open_tasks", [])),
             recent_tasks=list(data.get("recent_tasks", [])),
             touched_files=list(data.get("touched_files", [])),
             updated_at=data.get("updated_at", ""),
@@ -49,6 +55,9 @@ class MemoryStore:
         payload = {
             "summary": record.summary,
             "facts": record.facts[-20:],
+            "preferences": record.preferences[-20:],
+            "decisions": record.decisions[-20:],
+            "open_tasks": record.open_tasks[-20:],
             "recent_tasks": record.recent_tasks[-10:],
             "touched_files": record.touched_files[-50:],
             "updated_at": record.updated_at or _utc_now(),
@@ -62,11 +71,46 @@ class MemoryStore:
         record.updated_at = _utc_now()
         self.save(record)
 
-    def update_from_run(self, task: str, final_message: str, events: list[AgentEvent]) -> None:
+    def update_from_run(
+        self,
+        task: str,
+        final_message: str,
+        events: list[AgentEvent],
+        reflection: dict[str, Any] | None = None,
+    ) -> None:
         record = self.load()
         record.recent_tasks.append(task)
-        if final_message.strip():
+        if reflection:
+            summary = str(reflection.get("summary") or "").strip() or final_message.strip()
+            if summary:
+                record.summary = summary[:800]
+            for item in reflection.get("lessons", []) or []:
+                text = str(item).strip()
+                if text and text not in record.facts:
+                    record.facts.append(text)
+            for item in reflection.get("next_steps", []) or []:
+                text = str(item).strip()
+                if text and text not in record.open_tasks:
+                    record.open_tasks.append(text)
+            for item in reflection.get("files", []) or []:
+                text = str(item).strip()
+                if text and text not in record.touched_files:
+                    record.touched_files.append(text)
+            for item in reflection.get("decisions", []) or []:
+                text = str(item).strip()
+                if text and text not in record.decisions:
+                    record.decisions.append(text)
+            for item in reflection.get("preferences", []) or []:
+                text = str(item).strip()
+                if text and text not in record.preferences:
+                    record.preferences.append(text)
+        elif final_message.strip():
             record.summary = final_message.strip()[:800]
+
+        if final_message.strip() and any(key in final_message.lower() for key in ["terminated", "error", "limit"]):
+            fallback = f"Follow up on: {task[:200]}"
+            if fallback not in record.open_tasks:
+                record.open_tasks.append(fallback)
 
         touched = set(record.touched_files)
         for event in events:
@@ -89,6 +133,15 @@ class MemoryStore:
         if record.facts:
             parts.append("Facts:")
             parts.extend(f"- {fact}" for fact in record.facts[-8:])
+        if record.decisions:
+            parts.append("Decisions:")
+            parts.extend(f"- {item}" for item in record.decisions[-8:])
+        if record.preferences:
+            parts.append("Preferences:")
+            parts.extend(f"- {item}" for item in record.preferences[-8:])
+        if record.open_tasks:
+            parts.append("Open tasks:")
+            parts.extend(f"- {item}" for item in record.open_tasks[-8:])
         if record.touched_files:
             parts.append("Touched files:")
             parts.extend(f"- {item}" for item in record.touched_files[-12:])

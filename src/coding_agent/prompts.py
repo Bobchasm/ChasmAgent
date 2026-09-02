@@ -49,6 +49,8 @@ def reflection_prompt() -> str:
         - lessons: array of strings
         - next_steps: array of strings
         - files: array of strings
+        - decisions: array of strings
+        - preferences: array of strings
         - status: string
         Keep it short and factual.
         """

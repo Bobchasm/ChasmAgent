@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 
@@ -32,14 +33,29 @@ def _session_title(task: str) -> str:
     text = " ".join((task or "").split())
     if not text:
         return "New Chat"
-    for sep in ["。", ".", "！", "!", "？", "?", ";", "；", "\n", " ", "，", ",", "：", ":"]:
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"[/\\][^\s，。！？!?;；:：]+", "", text)
+    prefixes = [
+        r"^(你好[，,]?\s*)",
+        r"^(请你[，,]?\s*)",
+        r"^(请帮我[，,]?\s*)",
+        r"^(帮我[，,]?\s*)",
+        r"^(麻烦你[，,]?\s*)",
+        r"^(能不能[，,]?\s*)",
+        r"^(希望你[，,]?\s*)",
+        r"^(现在[，,]?\s*)",
+        r"^(然后[，,]?\s*)",
+    ]
+    for pattern in prefixes:
+        text = re.sub(pattern, "", text)
+    text = text.strip("，。！？!?;；:： ")
+    for sep in ["。", ".", "！", "!", "？", "?", ";", "；", "\n", "，", ",", "：", ":"]:
         idx = text.find(sep)
-        if 8 <= idx <= 28:
+        if 6 <= idx <= 22:
             text = text[:idx]
             break
-    text = text.strip("，。！？!?;；:：")
-    if len(text) > 26:
-        text = text[:26].rstrip()
+    if len(text) > 18:
+        text = text[:18].rstrip()
     return text or "New Chat"
 
 
@@ -116,7 +132,7 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
             should_stop=cancel_event.is_set,
         )
         try:
-            result = agent.run(session.task)
+            result = agent.run(session.task, conversation_messages=session.messages)
             final_message = "Terminated: stopped by user." if cancel_event.is_set() else result.final_message
             status = "stopped" if cancel_event.is_set() else "done"
             store.append_message(session_id, "assistant", final_message)
@@ -315,6 +331,24 @@ def build_app(settings: AgentSettings | None = None) -> FastAPI:
         store.update(record.id, title=_session_title(task))
         background_tasks.add_task(run_session, record.id)
         return {"session_id": record.id}
+
+    @app.post("/api/sessions/{session_id}/message")
+    def append_session_message(request: Request, session_id: str, payload: dict[str, str], background_tasks: BackgroundTasks):
+        user = _require_user(request)
+        content = (payload.get("content") or "").strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="content is required")
+        record = store.get(session_id)
+        if record is None or record.user_id != user.id:
+            raise HTTPException(status_code=404, detail="session not found")
+        if record.status == "running":
+            raise HTTPException(status_code=409, detail="session is running")
+        store.append_message(session_id, "user", content)
+        title = record.title or _session_title(record.task or content)
+        if not record.title:
+            store.update(session_id, title=title)
+        background_tasks.add_task(run_session, session_id)
+        return {"session_id": session_id}
 
     @app.get("/api/sessions/{session_id}")
     def get_session(request: Request, session_id: str):
